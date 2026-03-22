@@ -335,6 +335,10 @@ class N64Frontend:
         c.retro_reset.argtypes = []
         c.retro_set_controller_port_device.restype = None
         c.retro_set_controller_port_device.argtypes = [ctypes.c_uint, ctypes.c_uint]
+        c.retro_get_memory_data.restype = ctypes.c_void_p
+        c.retro_get_memory_data.argtypes = [ctypes.c_uint]
+        c.retro_get_memory_size.restype = ctypes.c_size_t
+        c.retro_get_memory_size.argtypes = [ctypes.c_uint]
 
     # -----------------------------------------------------------------
     # HW rendering callbacks
@@ -783,6 +787,15 @@ class N64Frontend:
 
     def get_frame(self):
         return self.frame_data
+
+    RETRO_MEMORY_SYSTEM_RAM = 2
+
+    def get_rdram(self):
+        ptr = self.core.retro_get_memory_data(self.RETRO_MEMORY_SYSTEM_RAM)
+        size = self.core.retro_get_memory_size(self.RETRO_MEMORY_SYSTEM_RAM)
+        if ptr and size:
+            return (ctypes.c_uint8 * size).from_address(ptr), size
+        return None, 0
 
 
 # =============================================================================

@@ -24,6 +24,7 @@ import numpy as np
 from PIL import Image
 import tkinter as tk
 from tkinter import ttk
+import cv2
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "StreamDiffusion"))
@@ -39,35 +40,168 @@ from utils.wrapper import StreamDiffusionWrapper
 PRESETS = {
     "Default Enhance": {
         "prompt": "high quality, enhanced, sharp, detailed, remastered",
-        "t_index": 35,
+        "strength": 0.35,
         "delta": 0.5,
     },
     "Studio Ghibli": {
         "prompt": "studio ghibli style, anime background, lush detailed",
-        "t_index": 32,
+        "strength": 0.50,
         "delta": 0.5,
     },
     "Watercolor": {
         "prompt": "watercolor painting, soft edges, flowing colors, artistic",
-        "t_index": 33,
+        "strength": 0.45,
         "delta": 0.5,
     },
     "Oil Painting": {
         "prompt": "oil painting, thick brushstrokes, impressionist, painterly",
-        "t_index": 33,
+        "strength": 0.45,
         "delta": 0.5,
     },
     "Synthwave": {
         "prompt": "neon synthwave, glowing edges, cyberpunk, purple blue",
-        "t_index": 30,
+        "strength": 0.55,
         "delta": 0.5,
     },
     "Modern Game": {
         "prompt": "modern AAA video game, ray traced, photorealistic, unreal engine 5",
-        "t_index": 35,
+        "strength": 0.35,
         "delta": 0.5,
     },
 }
+
+NUM_DENOISE_STEPS = 4
+
+
+def strength_to_t_index_list(strength: float) -> list[int]:
+    strength = max(0.0, min(1.0, strength))
+    start = int(round(37 * (1.0 - strength)))  # 37 at min, 0 at max
+    end = 44 + int(round(2 * (1.0 - strength)))  # ~44-46
+    indices = []
+    for i in range(NUM_DENOISE_STEPS):
+        idx = start + int(round(i * (end - start) / (NUM_DENOISE_STEPS - 1)))
+        indices.append(max(0, min(49, idx)))
+    return indices
+
+# ============================================================
+# ControlNet helpers
+# ============================================================
+
+CONTROLNET_MODELS = {
+    "canny": "lllyasviel/control_v11p_sd15_canny",
+    "depth": "lllyasviel/control_v11f1p_sd15_depth",
+}
+
+
+def extract_canny(frame: np.ndarray, low: int = 100, high: int = 200) -> np.ndarray:
+    gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, low, high)
+    return cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
+
+
+SM64_ZBUFFER_ADDR = 0x00000400
+SM64_ZBUFFER_SIZE = 320 * 240 * 2  # 153,600 bytes
+
+
+def _decode_n64_z(rdram_array, address, width, height):
+    """Decode N64 Z-buffer from RDRAM into a smooth float32 depth array."""
+    size = width * height * 2
+    raw = np.frombuffer(rdram_array, dtype=np.uint8, count=size, offset=address)
+    # Undo mupen64plus/parallel_n64 32-bit word byte swap.
+    # The emulator stores RDRAM with bytes reversed within each 4-byte word.
+    raw_swapped = raw.reshape(-1, 4)[:, ::-1].flatten()
+    # Now interpret as big-endian u16
+    high = raw_swapped[0::2].astype(np.uint16)
+    low = raw_swapped[1::2].astype(np.uint16)
+    z16 = (high << 8) | low
+
+    # The raw z16 value IS the non-linear encoding. Since the N64 uses a
+    # piecewise-linear approximation of 1/z, we can simply treat the raw
+    # 14-bit value (bits 15:2) as a monotonic depth index.  Higher = farther.
+    z14 = (z16 >> 2).astype(np.float32)
+    return z14.reshape(height, width), z16
+
+
+def read_n64_zbuffer(rdram_array, address=SM64_ZBUFFER_ADDR, width=320, height=240):
+    """Read N64 Z-buffer from RDRAM, decode, and return as (H,W,3) uint8 depth map."""
+    z_float, _ = _decode_n64_z(rdram_array, address, width, height)
+
+    # Normalize to 0-255
+    z_min, z_max = z_float.min(), z_float.max()
+    if z_max > z_min:
+        depth = ((z_float - z_min) / (z_max - z_min) * 255.0).astype(np.uint8)
+    else:
+        depth = np.zeros((height, width), dtype=np.uint8)
+
+    # Apply CLAHE to improve contrast
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    depth = clahe.apply(depth)
+
+    return cv2.cvtColor(depth, cv2.COLOR_GRAY2RGB)
+
+
+def dump_zbuffer_snapshot(rdram_array, raw_frame=None, address=SM64_ZBUFFER_ADDR,
+                          width=320, height=240):
+    """Save multiple Z-buffer visualizations to disk for analysis."""
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = os.path.join(SCRIPT_DIR, "zbuffer_dumps")
+    os.makedirs(out_dir, exist_ok=True)
+
+    z_float, z16 = _decode_n64_z(rdram_array, address, width, height)
+
+    z_min, z_max = z_float.min(), z_float.max()
+
+    # 1) Raw z14 normalized to 0-255 (smooth — no exponent banding)
+    if z_max > z_min:
+        depth_norm = ((z_float - z_min) / (z_max - z_min) * 255.0).astype(np.uint8)
+    else:
+        depth_norm = np.zeros((height, width), dtype=np.uint8)
+    cv2.imwrite(os.path.join(out_dir, f"{ts}_depth_raw.png"), depth_norm)
+
+    # 2) CLAHE enhanced
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    depth_clahe = clahe.apply(depth_norm)
+    cv2.imwrite(os.path.join(out_dir, f"{ts}_depth_clahe.png"), depth_clahe)
+
+    # 3) Histogram equalized
+    depth_histeq = cv2.equalizeHist(depth_norm)
+    cv2.imwrite(os.path.join(out_dir, f"{ts}_depth_histeq.png"), depth_histeq)
+
+    # 4) Colormap (turbo) for easy visualization
+    depth_color = cv2.applyColorMap(depth_clahe, cv2.COLORMAP_TURBO)
+    cv2.imwrite(os.path.join(out_dir, f"{ts}_depth_turbo.png"), depth_color)
+
+    # 5) Inverted (near=bright, far=dark — more intuitive)
+    depth_inv = 255 - depth_clahe
+    cv2.imwrite(os.path.join(out_dir, f"{ts}_depth_inverted.png"), depth_inv)
+
+    # 6) Raw game frame if available
+    if raw_frame is not None:
+        cv2.imwrite(os.path.join(out_dir, f"{ts}_game_frame.png"),
+                    cv2.cvtColor(raw_frame, cv2.COLOR_RGB2BGR))
+
+    # 7) Stats text file
+    z16_flat = z16.flatten()
+    exponent = (z16_flat >> 13) & 0x7
+    with open(os.path.join(out_dir, f"{ts}_stats.txt"), "w") as f:
+        f.write(f"Z-Buffer Stats\n")
+        f.write(f"==============\n")
+        f.write(f"Raw z16 range: {z16_flat.min()} - {z16_flat.max()}\n")
+        f.write(f"z14 (bits 15:2) range: {z_min:.0f} - {z_max:.0f}\n")
+        unique_exp, exp_counts = np.unique(exponent, return_counts=True)
+        f.write(f"\nExponent distribution:\n")
+        for e, c in zip(unique_exp, exp_counts):
+            pct = c / len(exponent) * 100
+            f.write(f"  exp={e}: {c:>6d} pixels ({pct:5.1f}%)\n")
+        f.write(f"\nz14 histogram (8 bins):\n")
+        hist, edges = np.histogram(z_float.flatten(), bins=8)
+        for i in range(len(hist)):
+            f.write(f"  {edges[i]:>8.0f} - {edges[i+1]:>8.0f}: {hist[i]:>6d} pixels\n")
+
+    print(f"Z-buffer snapshot saved to {out_dir}/{ts}_*")
+    return out_dir
+
 
 # ============================================================
 # Diffusion Processor (background thread)
@@ -80,7 +214,7 @@ class DiffusionProcessor:
         self.running = True
 
         self.prompt = PRESETS["Default Enhance"]["prompt"]
-        self.t_index = PRESETS["Default Enhance"]["t_index"]
+        self.strength = PRESETS["Default Enhance"]["strength"]
         self.delta = PRESETS["Default Enhance"]["delta"]
 
         self._pending = None
@@ -93,12 +227,42 @@ class DiffusionProcessor:
         self.diff_fps = 0.0
         self.status = "Initializing..."
 
+        # ControlNet settings
+        self.controlnet_enabled = False
+        self.controlnet_mode = "canny"  # "canny", "depth_midas", or "depth_zbuffer"
+        self.controlnet_scale = 0.7
+        self.canny_low = 80
+        self.canny_high = 180
+        self._depth_estimator = None
+        self._controlnet_pending = None
+        self._rdram = None
+        self.latest_zbuffer_debug = None
+        self.show_zbuffer_debug = False
+        self._prev_enhanced = None  # Previous diffusion output for temporal blending
+        self.temporal_blend = 0.3   # 0.0 = no blending (raw), 1.0 = freeze on previous frame
+
+    def set_rdram(self, rdram_array):
+        self._rdram = rdram_array
+
     def init_model(self):
-        self.status = "Loading StreamDiffusion + TensorRT..."
+        controlnet_model_id = None
+        if self.controlnet_enabled:
+            if self.controlnet_mode.startswith("depth_"):
+                controlnet_model_id = CONTROLNET_MODELS["depth"]
+            else:
+                controlnet_model_id = CONTROLNET_MODELS.get(self.controlnet_mode)
+            self.status = f"Loading StreamDiffusion + ControlNet ({self.controlnet_mode})..."
+        else:
+            self.status = "Loading StreamDiffusion + TensorRT..."
         print(self.status)
+
+        if self.controlnet_enabled and self.controlnet_mode == "depth_midas" and self._depth_estimator is None:
+            from depth_estimator import DepthEstimator
+            self._depth_estimator = DepthEstimator()
+
         self.stream = StreamDiffusionWrapper(
-            model_id_or_path="stabilityai/sd-turbo",
-            t_index_list=[self.t_index],
+            model_id_or_path="Lykon/dreamshaper-7",
+            t_index_list=strength_to_t_index_list(self.strength),
             mode="img2img",
             output_type="pil",
             frame_buffer_size=1,
@@ -106,19 +270,21 @@ class DiffusionProcessor:
             height=240,
             warmup=10,
             acceleration="tensorrt",
-            use_lcm_lora=False,
+            use_lcm_lora=True,
             use_tiny_vae=True,
             use_denoising_batch=True,
-            cfg_type="none",
+            cfg_type="self",
             seed=42,
             use_safety_checker=False,
             engine_dir=os.path.join(SCRIPT_DIR, "engines"),
+            controlnet_model_id=controlnet_model_id,
+            controlnet_scale=self.controlnet_scale,
         )
         self.stream.prepare(
             prompt=self.prompt,
-            negative_prompt="",
+            negative_prompt="blurry, low quality, distorted, artifacts, ugly",
             num_inference_steps=50,
-            guidance_scale=1.0,
+            guidance_scale=2.0,
             delta=self.delta,
         )
         # Warmup
@@ -130,9 +296,9 @@ class DiffusionProcessor:
         self.status = "Ready (diffusion OFF)"
         print("StreamDiffusion ready!")
 
-    def request_settings(self, prompt, t_index, delta):
+    def request_settings(self, prompt, strength, delta):
         with self._pending_lock:
-            self._pending = {"prompt": prompt, "t_index": t_index, "delta": delta}
+            self._pending = {"prompt": prompt, "strength": strength, "delta": delta}
 
     def _apply_pending(self):
         with self._pending_lock:
@@ -143,18 +309,91 @@ class DiffusionProcessor:
 
         self.status = "Applying settings..."
         self.prompt = s["prompt"]
-        self.t_index = s["t_index"]
+        self.strength = s["strength"]
         self.delta = s["delta"]
 
-        self.stream.stream.t_list = [self.t_index]
+        self.stream.stream.t_list = strength_to_t_index_list(self.strength)
         self.stream.prepare(
             prompt=self.prompt,
-            negative_prompt="",
+            negative_prompt="blurry, low quality, distorted, artifacts, ugly",
             num_inference_steps=50,
-            guidance_scale=1.0,
+            guidance_scale=2.0,
             delta=self.delta,
         )
         self.status = "Running"
+
+    def request_controlnet_settings(self, scale=None, canny_low=None, canny_high=None):
+        if scale is not None:
+            self.controlnet_scale = scale
+            if self.stream and self.stream.stream.controlnet is not None:
+                self.stream.stream.controlnet_scale = scale
+        if canny_low is not None:
+            self.canny_low = canny_low
+        if canny_high is not None:
+            self.canny_high = canny_high
+
+    def request_reload(self, controlnet_enabled, controlnet_mode):
+        with self._pending_lock:
+            self._controlnet_pending = {
+                "enabled": controlnet_enabled,
+                "mode": controlnet_mode,
+            }
+
+    def _apply_controlnet_reload(self):
+        with self._pending_lock:
+            if self._controlnet_pending is None:
+                return False
+            s = self._controlnet_pending
+            self._controlnet_pending = None
+
+        old_enabled = self.controlnet_enabled
+        old_mode = self.controlnet_mode
+        new_enabled = s["enabled"]
+        new_mode = s["mode"]
+
+        if new_enabled == old_enabled and new_mode == old_mode:
+            return False
+
+        # Determine if the ControlNet model itself changes
+        def _cn_model_key(mode):
+            return "depth" if mode.startswith("depth_") else mode
+
+        model_changed = (
+            new_enabled != old_enabled
+            or _cn_model_key(new_mode) != _cn_model_key(old_mode)
+        )
+
+        self.controlnet_enabled = new_enabled
+        self.controlnet_mode = new_mode
+
+        # Load MiDaS depth estimator if switching to depth_midas
+        if new_enabled and new_mode == "depth_midas" and self._depth_estimator is None:
+            from depth_estimator import DepthEstimator
+            self._depth_estimator = DepthEstimator()
+
+        if not model_changed:
+            return False
+        was_enabled = self.enabled
+        self.enabled = False
+        self.status = "Reloading model..."
+        self.stream = None
+        self.init_model()
+        self.stream.prepare(
+            prompt=self.prompt,
+            negative_prompt="blurry, low quality, distorted, artifacts, ugly",
+            num_inference_steps=50,
+            guidance_scale=2.0,
+            delta=self.delta,
+        )
+        # Warmup
+        dummy = Image.new("RGB", (320, 240))
+        tensor = self.stream.preprocess_image(dummy)
+        for _ in range(5):
+            self.stream(image=tensor)
+        torch.cuda.synchronize()
+        self.enabled = was_enabled
+        self.status = "Running" if self.enabled else "Ready (diffusion OFF)"
+        return True
 
     def set_raw_frame(self, frame):
         self.latest_raw_frame = frame.copy()
@@ -165,18 +404,44 @@ class DiffusionProcessor:
 
         while self.running:
             self._apply_pending()
+            if self._apply_controlnet_reload():
+                continue
 
             if not self.enabled or self.latest_raw_frame is None:
                 time.sleep(0.005)
                 continue
 
             try:
-                pil_img = Image.fromarray(self.latest_raw_frame)
+                raw_frame = self.latest_raw_frame
+
+                # Compute ControlNet conditioning
+                if self.controlnet_enabled and self.stream.stream.controlnet is not None:
+                    if self.controlnet_mode == "canny":
+                        cond_image = extract_canny(raw_frame, self.canny_low, self.canny_high)
+                    elif self.controlnet_mode == "depth_zbuffer" and self._rdram is not None:
+                        cond_image = read_n64_zbuffer(self._rdram)
+                        if self.show_zbuffer_debug:
+                            self.latest_zbuffer_debug = cond_image
+                    else:  # depth_midas
+                        cond_image = self._depth_estimator.estimate(raw_frame)
+                    cond_tensor = self.stream.preprocess_controlnet_image(cond_image)
+                    self.stream.set_controlnet_cond(cond_tensor)
+
+                pil_img = Image.fromarray(raw_frame)
                 tensor = self.stream.preprocess_image(pil_img)
                 result = self.stream(image=tensor)
                 if isinstance(result, list):
                     result = result[0]
-                self.latest_enhanced_frame = np.array(result)
+                new_frame = np.array(result)
+
+                # Temporal blending: mix with previous frame to reduce flickering
+                alpha = self.temporal_blend
+                if alpha > 0 and self._prev_enhanced is not None and self._prev_enhanced.shape == new_frame.shape:
+                    blended = cv2.addWeighted(new_frame, 1.0 - alpha, self._prev_enhanced, alpha, 0)
+                    self.latest_enhanced_frame = blended
+                else:
+                    self.latest_enhanced_frame = new_frame
+                self._prev_enhanced = self.latest_enhanced_frame
 
                 count += 1
                 now = time.time()
@@ -185,6 +450,8 @@ class DiffusionProcessor:
                     count = 0
                     t0 = now
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self.status = f"Error: {e}"
                 time.sleep(0.5)
 
@@ -196,12 +463,12 @@ class DiffusionProcessor:
 def create_control_panel(processor):
     root = tk.Tk()
     root.title("N64 DLSS Control Panel")
-    root.geometry("300x640")
+    root.geometry("300x920")
     root.resizable(False, True)
 
     enabled_var = tk.BooleanVar(value=False)
     prompt_var = tk.StringVar(value=processor.prompt)
-    t_index_var = tk.IntVar(value=processor.t_index)
+    strength_var = tk.DoubleVar(value=processor.strength)
     delta_var = tk.DoubleVar(value=processor.delta)
     status_var = tk.StringVar(value="Ready")
     diff_fps_var = tk.StringVar(value="Diffusion: -- FPS")
@@ -229,19 +496,19 @@ def create_control_panel(processor):
     prompt_entry = ttk.Entry(f_set, textvariable=prompt_var, width=38)
     prompt_entry.pack(fill="x", pady=(0, 6))
 
-    t_label = ttk.Label(f_set, text=f"t_index: {t_index_var.get()}")
-    t_label.pack(anchor="w")
+    strength_label = ttk.Label(f_set, text=f"Denoise Strength: {strength_var.get():.2f}")
+    strength_label.pack(anchor="w")
 
-    def on_t_slide(val):
-        t_label.config(text=f"t_index: {int(float(val))}")
+    def on_strength_slide(val):
+        strength_label.config(text=f"Denoise Strength: {float(val):.2f}")
 
-    ttk.Scale(f_set, from_=0, to=49, variable=t_index_var,
-              orient="horizontal", command=on_t_slide).pack(fill="x")
+    ttk.Scale(f_set, from_=0.0, to=1.0, variable=strength_var,
+              orient="horizontal", command=on_strength_slide).pack(fill="x")
 
     hint = tk.Frame(f_set)
     hint.pack(fill="x")
-    ttk.Label(hint, text="<- More effect", font=("", 7)).pack(side="left")
-    ttk.Label(hint, text="Faithful ->", font=("", 7)).pack(side="right")
+    ttk.Label(hint, text="<- Faithful", font=("", 7)).pack(side="left")
+    ttk.Label(hint, text="Creative ->", font=("", 7)).pack(side="right")
 
     tk.Frame(f_set, height=6).pack()
 
@@ -254,10 +521,29 @@ def create_control_panel(processor):
     ttk.Scale(f_set, from_=0.0, to=1.0, variable=delta_var,
               orient="horizontal", command=on_d_slide).pack(fill="x")
 
+    tk.Frame(f_set, height=6).pack()
+
+    blend_var = tk.DoubleVar(value=processor.temporal_blend)
+    blend_label = ttk.Label(f_set, text=f"Temporal Blend: {blend_var.get():.2f}")
+    blend_label.pack(anchor="w")
+
+    def on_blend_slide(val):
+        v = float(val)
+        blend_label.config(text=f"Temporal Blend: {v:.2f}")
+        processor.temporal_blend = v
+
+    ttk.Scale(f_set, from_=0.0, to=0.9, variable=blend_var,
+              orient="horizontal", command=on_blend_slide).pack(fill="x")
+
+    blend_hint = tk.Frame(f_set)
+    blend_hint.pack(fill="x")
+    ttk.Label(blend_hint, text="<- Responsive", font=("", 7)).pack(side="left")
+    ttk.Label(blend_hint, text="Stable ->", font=("", 7)).pack(side="right")
+
     def apply_settings():
         processor.request_settings(
             prompt=prompt_var.get(),
-            t_index=int(t_index_var.get()),
+            strength=float(strength_var.get()),
             delta=float(delta_var.get()),
         )
 
@@ -272,15 +558,100 @@ def create_control_panel(processor):
     def apply_preset(name):
         p = PRESETS[name]
         prompt_var.set(p["prompt"])
-        t_index_var.set(p["t_index"])
+        strength_var.set(p["strength"])
         delta_var.set(p["delta"])
-        on_t_slide(p["t_index"])
+        on_strength_slide(p["strength"])
         on_d_slide(p["delta"])
         apply_settings()
 
     for name in PRESETS:
         ttk.Button(f_pre, text=name,
                    command=lambda n=name: apply_preset(n)).pack(fill="x", pady=1)
+
+    # -- ControlNet --
+    f_cn = ttk.LabelFrame(root, text="ControlNet", padding=8)
+    f_cn.pack(fill="x", padx=8, pady=4)
+
+    cn_enabled_var = tk.BooleanVar(value=processor.controlnet_enabled)
+    cn_mode_var = tk.StringVar(value=processor.controlnet_mode)
+    cn_scale_var = tk.DoubleVar(value=processor.controlnet_scale)
+    cn_canny_low_var = tk.IntVar(value=processor.canny_low)
+    cn_canny_high_var = tk.IntVar(value=processor.canny_high)
+
+    ttk.Checkbutton(f_cn, text="Enable ControlNet (requires reload)",
+                    variable=cn_enabled_var).pack(anchor="w")
+
+    mode_frame = tk.Frame(f_cn)
+    mode_frame.pack(fill="x", pady=2)
+    ttk.Radiobutton(mode_frame, text="Canny", variable=cn_mode_var,
+                    value="canny").pack(anchor="w")
+    ttk.Radiobutton(mode_frame, text="Depth (MiDaS)", variable=cn_mode_var,
+                    value="depth_midas").pack(anchor="w")
+    ttk.Radiobutton(mode_frame, text="Depth (N64 Z-Buffer)", variable=cn_mode_var,
+                    value="depth_zbuffer").pack(anchor="w")
+
+    cn_scale_label = ttk.Label(f_cn, text=f"Scale: {cn_scale_var.get():.2f}")
+    cn_scale_label.pack(anchor="w")
+
+    def on_cn_scale(val):
+        cn_scale_label.config(text=f"Scale: {float(val):.2f}")
+        processor.request_controlnet_settings(scale=float(val))
+
+    ttk.Scale(f_cn, from_=0.0, to=2.0, variable=cn_scale_var,
+              orient="horizontal", command=on_cn_scale).pack(fill="x")
+
+    canny_frame = ttk.LabelFrame(f_cn, text="Canny Thresholds", padding=4)
+    canny_frame.pack(fill="x", pady=2)
+
+    canny_low_label = ttk.Label(canny_frame, text=f"Low: {cn_canny_low_var.get()}")
+    canny_low_label.pack(anchor="w")
+
+    def on_canny_low(val):
+        v = int(float(val))
+        canny_low_label.config(text=f"Low: {v}")
+        processor.request_controlnet_settings(canny_low=v)
+
+    ttk.Scale(canny_frame, from_=0, to=255, variable=cn_canny_low_var,
+              orient="horizontal", command=on_canny_low).pack(fill="x")
+
+    canny_high_label = ttk.Label(canny_frame, text=f"High: {cn_canny_high_var.get()}")
+    canny_high_label.pack(anchor="w")
+
+    def on_canny_high(val):
+        v = int(float(val))
+        canny_high_label.config(text=f"High: {v}")
+        processor.request_controlnet_settings(canny_high=v)
+
+    ttk.Scale(canny_frame, from_=0, to=255, variable=cn_canny_high_var,
+              orient="horizontal", command=on_canny_high).pack(fill="x")
+
+    zbuf_debug_var = tk.BooleanVar(value=False)
+
+    def on_zbuf_debug():
+        processor.show_zbuffer_debug = zbuf_debug_var.get()
+        if not zbuf_debug_var.get():
+            processor.latest_zbuffer_debug = None
+
+    ttk.Checkbutton(f_cn, text="Show Z-Buffer Debug",
+                    variable=zbuf_debug_var, command=on_zbuf_debug).pack(anchor="w", pady=(4, 0))
+
+    def save_zbuffer_snapshot():
+        if processor._rdram is not None:
+            dump_zbuffer_snapshot(processor._rdram, processor.latest_raw_frame)
+        else:
+            print("No RDRAM available for Z-buffer snapshot")
+
+    ttk.Button(f_cn, text="Save Z-Buffer Snapshot",
+               command=save_zbuffer_snapshot).pack(fill="x", pady=(4, 0))
+
+    def reload_controlnet():
+        processor.request_reload(
+            controlnet_enabled=cn_enabled_var.get(),
+            controlnet_mode=cn_mode_var.get(),
+        )
+
+    ttk.Button(f_cn, text="Reload Model",
+               command=reload_controlnet).pack(fill="x", pady=(6, 0))
 
     # -- Status --
     f_stat = ttk.LabelFrame(root, text="Status", padding=8)
@@ -330,6 +701,14 @@ def main():
     frontend.on_frame = processor.set_raw_frame
     frontend.init()
     frontend.load_game(rom_path)
+
+    # Wire RDRAM for Z-buffer depth
+    rdram, rdram_size = frontend.get_rdram()
+    if rdram:
+        processor.set_rdram(rdram)
+        print(f"RDRAM access: {rdram_size / 1024 / 1024:.1f} MB")
+    else:
+        print("WARNING: Could not access RDRAM — Z-buffer depth unavailable")
 
     # ---- Init tkinter control panel ----
     root = create_control_panel(processor)
@@ -392,11 +771,29 @@ def main():
         if processor.enabled and processor.latest_enhanced_frame is not None:
             frontend.frame_data = processor.latest_enhanced_frame
 
+        # -- Update Z-buffer debug (runs independently of ControlNet) --
+        if processor.show_zbuffer_debug and processor._rdram is not None:
+            processor.latest_zbuffer_debug = read_n64_zbuffer(processor._rdram)
+
         # -- Draw using frontend's GL renderer --
         if frontend.hw_render:
             pass  # core already rendered to GL
         else:
             frontend._draw_frame_gl(disp_w, disp_h)
+
+        # -- Z-Buffer debug overlay --
+        if processor.show_zbuffer_debug and processor.latest_zbuffer_debug is not None:
+            zbuf = processor.latest_zbuffer_debug
+            # Quarter-size overlay in bottom-right corner
+            oh, ow = zbuf.shape[:2]
+            oh, ow = oh // 2, ow // 2
+            small = cv2.resize(zbuf, (ow, oh))
+            # Flip vertically — OpenGL draws bottom-up, our image is top-down
+            small = small[::-1].copy()
+            # Brighten for visibility in the overlay
+            small = cv2.convertScaleAbs(small, alpha=1.8, beta=30)
+            GL.glWindowPos2i(disp_w - ow, 0)
+            GL.glDrawPixels(ow, oh, GL.GL_RGB, GL.GL_UNSIGNED_BYTE, small.tobytes())
 
         pygame.display.flip()
 

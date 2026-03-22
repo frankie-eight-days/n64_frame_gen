@@ -28,6 +28,7 @@ __pycache__/
 *.pyc
 
 # Generated outputs
+zbuffer_dumps/
 test_outputs/
 benchmark_outputs/
 test.jpg
