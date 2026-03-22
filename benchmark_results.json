@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-03-22T10:28:23.535221",
+  "gpu": "NVIDIA GeForce RTX 4060",
+  "vram_total_gb": 8.0,
+  "pytorch_version": "2.6.0+cu124",
+  "cuda_version": "12.4",
+  "iterations": 50,
+  "results": [
+    {
+      "name": "SD-Turbo 320x240 1-step",
+      "model": "stabilityai/sd-turbo",
+      "resolution": "320x240",
+      "steps": 1,
+      "acceleration": "none",
+      "avg_ms": 45.112801971435545,
+      "median_ms": 43.99731254577637,
+      "min_ms": 41.6014404296875,
+      "max_ms": 57.57360076904297,
+      "std_ms": 3.2500983891730075,
+      "avg_fps": 22.271114700586,
+      "median_fps": 22.72873779881202,
+      "min_fps": 17.369071703739866,
+      "max_fps": 24.037629218395594,
+      "p95_ms": 51.04463233947754,
+      "p99_ms": 54.69178901672362,
+      "vram_allocated_gb": 2.43,
+      "vram_reserved_gb": 2.5,
+      "load_time_s": 57.8
+    },
+    {
+      "name": "SD-Turbo 512x512 1-step",
+      "model": "stabilityai/sd-turbo",
+      "resolution": "512x512",
+      "steps": 1,
+      "acceleration": "none",
+      "avg_ms": 84.87185943603515,
+      "median_ms": 84.5241928100586,
+      "min_ms": 81.02047729492188,
+      "max_ms": 89.5739517211914,
+      "std_ms": 2.054223568928051,
+      "avg_fps": 11.789326306379058,
+      "median_fps": 11.830932342486028,
+      "min_fps": 11.163959843064733,
+      "max_fps": 12.342558738081848,
+      "p95_ms": 88.78752555847169,
+      "p99_ms": 89.31507476806641,
+      "vram_allocated_gb": 2.43,
+      "vram_reserved_gb": 2.49,
+      "load_time_s": 3.6
+    }
+  ]
+}

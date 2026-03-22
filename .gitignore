@@ -1,0 +1,43 @@
+# Virtual environments
+venv/
+venv310/
+
+# TensorRT engine cache (16GB+, rebuilt automatically)
+engines/
+
+# StreamDiffusion (cloned separately, see README)
+StreamDiffusion/
+
+# ROMs (provide your own)
+n64Emulator/sm65.z64
+n64Emulator/*.z64
+n64Emulator/*.n64
+n64Emulator/*.v64
+
+# Libretro core binaries (download separately, see README)
+n64Emulator/cores/*.dll
+n64Emulator/cores/*.so
+n64Emulator/cores/*.dylib
+n64Emulator/cores/*.zip
+
+# Runtime directories
+n64Emulator/saves/
+n64Emulator/system/
+n64Emulator/__pycache__/
+__pycache__/
+*.pyc
+
+# Generated outputs
+test_outputs/
+benchmark_outputs/
+test.jpg
+test_resized.png
+
+# Generated reports
+n64Emulator/n64_emulator_report.html
+
+# Misc
+.DS_Store
+Thumbs.db
+*.swp
+*.swo

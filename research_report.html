@@ -1,0 +1,1666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N64 DLSS - Real-Time Neural Frame Generation Research Report</title>
+    <style>
+        :root {
+            --bg: #0a0e17;
+            --surface: #131a2b;
+            --surface2: #1a2340;
+            --accent: #00e5ff;
+            --accent2: #7c4dff;
+            --accent3: #00e676;
+            --warning: #ffab00;
+            --danger: #ff5252;
+            --text: #e0e6f0;
+            --text-muted: #8892a8;
+            --border: #2a3555;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #0a0e17 0%, #1a1040 40%, #0d2137 70%, #0a0e17 100%);
+            padding: 80px 40px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                radial-gradient(circle at 20% 50%, rgba(124, 77, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 50%, rgba(0, 229, 255, 0.1) 0%, transparent 50%);
+        }
+
+        .hero h1 {
+            font-size: 3.2em;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .hero .subtitle {
+            font-size: 1.3em;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .hero .badge {
+            display: inline-block;
+            background: rgba(0, 229, 255, 0.15);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            color: var(--accent);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin-top: 20px;
+            position: relative;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        h2 {
+            font-size: 2em;
+            font-weight: 700;
+            margin: 60px 0 24px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--border);
+            color: var(--accent);
+        }
+
+        h3 {
+            font-size: 1.4em;
+            font-weight: 600;
+            margin: 32px 0 16px;
+            color: var(--text);
+        }
+
+        h4 {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin: 20px 0 10px;
+            color: var(--accent2);
+        }
+
+        p { margin-bottom: 14px; }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
+        }
+        a:hover { border-bottom-color: var(--accent); }
+
+        /* Executive Summary Cards */
+        .exec-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .exec-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .exec-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+
+        .exec-card .label {
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .exec-card .value {
+            font-size: 2em;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent), var(--accent3));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .exec-card .detail {
+            font-size: 0.9em;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        /* Model Cards */
+        .model-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            margin: 20px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .model-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 4px;
+            height: 100%;
+        }
+
+        .model-card.tier-s::before { background: var(--accent3); }
+        .model-card.tier-a::before { background: var(--accent); }
+        .model-card.tier-b::before { background: var(--accent2); }
+        .model-card.tier-c::before { background: var(--warning); }
+
+        .model-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .model-name {
+            font-size: 1.5em;
+            font-weight: 700;
+        }
+
+        .tier-badge {
+            display: inline-block;
+            padding: 4px 14px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 700;
+            letter-spacing: 1px;
+        }
+
+        .tier-s .tier-badge { background: rgba(0, 230, 118, 0.15); color: var(--accent3); border: 1px solid rgba(0, 230, 118, 0.3); }
+        .tier-a .tier-badge { background: rgba(0, 229, 255, 0.15); color: var(--accent); border: 1px solid rgba(0, 229, 255, 0.3); }
+        .tier-b .tier-badge { background: rgba(124, 77, 255, 0.15); color: var(--accent2); border: 1px solid rgba(124, 77, 255, 0.3); }
+        .tier-c .tier-badge { background: rgba(255, 171, 0, 0.15); color: var(--warning); border: 1px solid rgba(255, 171, 0, 0.3); }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+
+        .stat {
+            background: var(--surface2);
+            border-radius: 8px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .stat .stat-label {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        .stat .stat-value {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: var(--accent);
+            margin-top: 4px;
+        }
+
+        .stat .stat-note {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .pros-cons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .pros-cons ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .pros-cons li {
+            padding: 4px 0 4px 24px;
+            position: relative;
+            font-size: 0.92em;
+        }
+
+        .pros li::before {
+            content: '+';
+            position: absolute;
+            left: 4px;
+            color: var(--accent3);
+            font-weight: 700;
+        }
+
+        .cons li::before {
+            content: '-';
+            position: absolute;
+            left: 4px;
+            color: var(--danger);
+            font-weight: 700;
+        }
+
+        /* Comparison Table */
+        .table-wrapper {
+            overflow-x: auto;
+            margin: 24px 0;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92em;
+        }
+
+        thead {
+            background: var(--surface2);
+        }
+
+        th {
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--accent);
+            white-space: nowrap;
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tr:hover td {
+            background: rgba(0, 229, 255, 0.03);
+        }
+
+        .fps-good { color: var(--accent3); font-weight: 700; }
+        .fps-ok { color: var(--warning); font-weight: 700; }
+        .fps-bad { color: var(--danger); font-weight: 700; }
+
+        /* Architecture Diagram */
+        .arch-box {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 32px;
+            margin: 24px 0;
+        }
+
+        .pipeline {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 24px 0;
+        }
+
+        .pipeline-step {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px 20px;
+            text-align: center;
+            min-width: 140px;
+        }
+
+        .pipeline-step .step-name {
+            font-weight: 700;
+            font-size: 0.95em;
+            color: var(--accent);
+        }
+
+        .pipeline-step .step-detail {
+            font-size: 0.8em;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .pipeline-arrow {
+            font-size: 1.5em;
+            color: var(--accent2);
+            flex-shrink: 0;
+        }
+
+        /* Info boxes */
+        .info-box {
+            border-radius: 10px;
+            padding: 20px 24px;
+            margin: 20px 0;
+            border-left: 4px solid;
+        }
+
+        .info-box.recommend {
+            background: rgba(0, 230, 118, 0.08);
+            border-color: var(--accent3);
+        }
+
+        .info-box.warning {
+            background: rgba(255, 171, 0, 0.08);
+            border-color: var(--warning);
+        }
+
+        .info-box.info {
+            background: rgba(0, 229, 255, 0.08);
+            border-color: var(--accent);
+        }
+
+        .info-box .box-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .recommend .box-title { color: var(--accent3); }
+        .warning .box-title { color: var(--warning); }
+        .info .box-title { color: var(--accent); }
+
+        /* Cloud section */
+        .cloud-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+            margin: 20px 0;
+        }
+
+        .cloud-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+        }
+
+        .cloud-card .provider {
+            font-weight: 700;
+            font-size: 1.1em;
+            margin-bottom: 8px;
+        }
+
+        .cloud-card .price {
+            font-size: 1.8em;
+            font-weight: 800;
+            color: var(--accent3);
+        }
+
+        .cloud-card .price-unit {
+            font-size: 0.5em;
+            color: var(--text-muted);
+        }
+
+        /* TOC */
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px 32px;
+            margin: 30px 0;
+        }
+
+        .toc h3 {
+            margin-top: 0;
+            color: var(--accent);
+        }
+
+        .toc ol {
+            padding-left: 24px;
+        }
+
+        .toc li {
+            padding: 6px 0;
+        }
+
+        .toc a {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .toc a:hover {
+            color: var(--accent);
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 0.85em;
+            border-top: 1px solid var(--border);
+            margin-top: 60px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2em; }
+            .hero { padding: 40px 20px; }
+            .pros-cons { grid-template-columns: 1fr; }
+            .pipeline { flex-direction: column; }
+            .pipeline-arrow { transform: rotate(90deg); }
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.78em;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+        .tag-diffusion { background: rgba(124, 77, 255, 0.2); color: var(--accent2); }
+        .tag-gan { background: rgba(0, 230, 118, 0.2); color: var(--accent3); }
+        .tag-interp { background: rgba(0, 229, 255, 0.2); color: var(--accent); }
+        .tag-sr { background: rgba(255, 171, 0, 0.2); color: var(--warning); }
+        .tag-hybrid { background: rgba(255, 82, 82, 0.2); color: var(--danger); }
+    </style>
+</head>
+<body>
+
+<div class="hero">
+    <h1>N64 Neural Frame Generation</h1>
+    <p class="subtitle">Deep research report on real-time image-to-image models for AI-powered frame generation on an N64 emulator</p>
+    <span class="badge">Target: GTX 4060 (8GB VRAM) &bull; 24+ FPS &bull; 320x240 native</span>
+</div>
+
+<div class="container">
+
+    <div class="toc">
+        <h3>Table of Contents</h3>
+        <ol>
+            <li><a href="#exec">Executive Summary</a></li>
+            <li><a href="#approach">Approach Comparison</a></li>
+            <li><a href="#models">Model Deep-Dives</a></li>
+            <li><a href="#comparison">Head-to-Head Comparison Table</a></li>
+            <li><a href="#architecture">Recommended Architectures</a></li>
+            <li><a href="#optimizations">Optimization Techniques</a></li>
+            <li><a href="#cloud">Cloud GPU Options</a></li>
+            <li><a href="#existing">Existing Related Projects</a></li>
+            <li><a href="#verdict">Final Verdict &amp; Next Steps</a></li>
+            <li><a href="#refs">References &amp; Papers</a></li>
+        </ol>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="exec">1. Executive Summary</h2>
+
+    <p>The goal is to take N64 emulator frames (320x240) and run them through a neural network in real-time to generate enhanced/stylized/upscaled frames. The key constraint is hitting <strong>24+ FPS</strong> (&le;41.67ms per frame) on an <strong>RTX 4060</strong> with 8GB VRAM.</p>
+
+    <div class="exec-grid">
+        <div class="exec-card">
+            <div class="label">Best Speed (Local)</div>
+            <div class="value">&lt;5ms</div>
+            <div class="detail">GameSR / FSRCNN lightweight super-resolution at 320x240. Hundreds of FPS.</div>
+        </div>
+        <div class="exec-card">
+            <div class="label">Best Diffusion (Local)</div>
+            <div class="value">~20ms</div>
+            <div class="detail">StreamDiffusion + SD-Turbo, 1-step at 320x240 with TensorRT. ~50 FPS estimated.</div>
+        </div>
+        <div class="exec-card">
+            <div class="label">Best GAN (Local)</div>
+            <div class="value">~8ms</div>
+            <div class="detail">HyPER-GAN at 320x240 &rarr; 720p. Under 1GB VRAM. ~120+ FPS.</div>
+        </div>
+        <div class="exec-card">
+            <div class="label">Frame Interpolation</div>
+            <div class="value">&lt;3ms</div>
+            <div class="detail">RIFE at N64 resolution is essentially free. Use to multiply any generator's FPS.</div>
+        </div>
+    </div>
+
+    <div class="info-box recommend">
+        <div class="box-title">TL;DR Recommendation</div>
+        <p><strong>Start with StreamDiffusion + LCM/Turbo for diffusion-based frame transformation</strong> &mdash; it was built exactly for real-time interactive img2img and achieves 91 FPS on RTX 4090. At N64's tiny 320x240 resolution, your RTX 4060 should hit 30-50 FPS with TensorRT. If you want pure speed, <strong>HyPER-GAN</strong> at &lt;1GB VRAM will do 100+ FPS. Layer <strong>RIFE</strong> on top to multiply whatever framerate you achieve.</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="approach">2. Four Approaches Compared</h2>
+
+    <p>There are fundamentally four different strategies for neural frame generation. Each has different speed/quality tradeoffs:</p>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Approach</th>
+                    <th>What It Does</th>
+                    <th>Speed</th>
+                    <th>Quality</th>
+                    <th>Creativity</th>
+                    <th>VRAM</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span class="tag tag-sr">Super-Resolution</span></td>
+                    <td>Upscale 320x240 &rarr; 720p/1080p with detail enhancement</td>
+                    <td class="fps-good">&lt;10ms</td>
+                    <td>Good</td>
+                    <td>Low (faithful)</td>
+                    <td>0.3-2 GB</td>
+                </tr>
+                <tr>
+                    <td><span class="tag tag-gan">GAN Enhancement</span></td>
+                    <td>Transform frames with trained GAN (style/detail/upscale)</td>
+                    <td class="fps-good">5-15ms</td>
+                    <td>Very Good</td>
+                    <td>Medium</td>
+                    <td>0.5-2 GB</td>
+                </tr>
+                <tr>
+                    <td><span class="tag tag-diffusion">Diffusion img2img</span></td>
+                    <td>Full diffusion-based frame transformation/generation</td>
+                    <td class="fps-ok">15-50ms</td>
+                    <td>Excellent</td>
+                    <td>Very High</td>
+                    <td>3-8 GB</td>
+                </tr>
+                <tr>
+                    <td><span class="tag tag-interp">Frame Interpolation</span></td>
+                    <td>Generate in-between frames from existing frames</td>
+                    <td class="fps-good">&lt;5ms</td>
+                    <td>Good</td>
+                    <td>None (motion only)</td>
+                    <td>0.5-1 GB</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box info">
+        <div class="box-title">Key Insight: Resolution Matters Enormously</div>
+        <p>Most benchmarks you'll find online are for 512x512 or 1024x1024 generation. N64 outputs at <strong>320x240 = 76,800 pixels</strong>, which is <strong>3.4x fewer pixels than 512x512</strong> and <strong>13.6x fewer than 1024x1024</strong>. This means any model benchmarked at 512x512 will be roughly <strong>2-4x faster</strong> at N64 resolution. This is a huge advantage.</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="models">3. Model Deep-Dives</h2>
+
+    <!-- StreamDiffusion -->
+    <div class="model-card tier-s">
+        <div class="model-header">
+            <div>
+                <div class="model-name">StreamDiffusion + SD-Turbo / LCM</div>
+                <span class="tag tag-diffusion">Diffusion</span>
+                <span class="tag tag-hybrid">Pipeline Framework</span>
+            </div>
+            <span class="tier-badge">S TIER</span>
+        </div>
+        <p>StreamDiffusion is not a model but a <strong>pipeline-level optimization framework</strong> specifically designed for real-time interactive image-to-image diffusion. It wraps SD 1.5 / SDXL / Turbo models with stream batching, residual classifier-free guidance, and stochastic similarity filtering.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Speed (4090)</div>
+                <div class="stat-value">91 FPS</div>
+                <div class="stat-note">512x512, 1-step</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Est. Speed (4060)</div>
+                <div class="stat-value">30-50 FPS</div>
+                <div class="stat-note">320x240, 1-step w/ TRT</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM</div>
+                <div class="stat-value">~4-6 GB</div>
+                <div class="stat-note">SD 1.5 backbone</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Speedup</div>
+                <div class="stat-value">59.6x</div>
+                <div class="stat-note">vs. standard diffusers</div>
+            </div>
+        </div>
+        <div class="pros-cons">
+            <div class="pros">
+                <h4>Strengths</h4>
+                <ul>
+                    <li>Built specifically for real-time interactive img2img</li>
+                    <li>Built-in TensorRT support</li>
+                    <li>Works with any SD 1.5 fine-tune / LoRA</li>
+                    <li>Stochastic similarity filter skips static frames</li>
+                    <li>Residual CFG eliminates extra UNet forward pass</li>
+                    <li>Active community, well-documented</li>
+                </ul>
+            </div>
+            <div class="cons">
+                <h4>Weaknesses</h4>
+                <ul>
+                    <li>8GB VRAM is tight during TensorRT engine build</li>
+                    <li>1-step quality can be inconsistent without fine-tuning</li>
+                    <li>Stream batching adds 1-2 frame latency</li>
+                    <li>Requires SD 1.5 or SDXL backbone (not lightweight)</li>
+                </ul>
+            </div>
+        </div>
+        <p style="margin-top: 16px;"><strong>Paper:</strong> <a href="https://arxiv.org/abs/2312.12491">arXiv:2312.12491</a> &bull; <strong>Code:</strong> <a href="https://github.com/cumulo-autumn/StreamDiffusion">GitHub</a></p>
+    </div>
+
+    <!-- HyPER-GAN -->
+    <div class="model-card tier-s">
+        <div class="model-header">
+            <div>
+                <div class="model-name">HyPER-GAN</div>
+                <span class="tag tag-gan">GAN</span>
+            </div>
+            <span class="tier-badge">S TIER</span>
+        </div>
+        <p>A GAN-based model specifically designed for <strong>game rendering enhancement</strong>. Trained on GTA-V for real-time visual quality improvement. At 12.3ms per frame at 720p on RTX 4070 Super with only 0.8GB VRAM, this is the fastest viable option for visual enhancement.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Speed (4070S)</div>
+                <div class="stat-value">81 FPS</div>
+                <div class="stat-note">720p, 12.3ms/frame</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Est. Speed (4060)</div>
+                <div class="stat-value">60-100+ FPS</div>
+                <div class="stat-note">320x240 input</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM</div>
+                <div class="stat-value">0.8 GB</div>
+                <div class="stat-note">Extremely lightweight</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Open Source</div>
+                <div class="stat-value">Yes</div>
+                <div class="stat-note">Pretrained weights</div>
+            </div>
+        </div>
+        <div class="pros-cons">
+            <div class="pros">
+                <h4>Strengths</h4>
+                <ul>
+                    <li>Fastest option by far &mdash; well within 24 FPS target</li>
+                    <li>Tiny VRAM footprint leaves room for emulator</li>
+                    <li>Designed specifically for game rendering</li>
+                    <li>Pre-trained models available</li>
+                </ul>
+            </div>
+            <div class="cons">
+                <h4>Weaknesses</h4>
+                <ul>
+                    <li>Trained on GTA-V, would need retraining for N64 style</li>
+                    <li>GAN artifacts possible on out-of-distribution data</li>
+                    <li>Less "creative" than diffusion &mdash; more of an enhancer</li>
+                    <li>New paper (March 2025), less community adoption</li>
+                </ul>
+            </div>
+        </div>
+        <p style="margin-top: 16px;"><strong>Paper:</strong> <a href="https://arxiv.org/abs/2603.10604">arXiv:2603.10604</a> &bull; <strong>Code:</strong> <a href="https://github.com/stefanos50/HyPER-GAN">GitHub</a></p>
+    </div>
+
+    <!-- RIFE -->
+    <div class="model-card tier-s">
+        <div class="model-header">
+            <div>
+                <div class="model-name">RIFE (Real-Time Intermediate Flow Estimation)</div>
+                <span class="tag tag-interp">Interpolation</span>
+            </div>
+            <span class="tier-badge">S TIER (COMPLEMENTARY)</span>
+        </div>
+        <p>The gold standard for real-time frame interpolation. Use this as a <strong>multiplier</strong> on top of any generator &mdash; if your neural model outputs 12 FPS, RIFE can double or triple it to 24-36 FPS with virtually zero additional latency at N64 resolution.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Speed (4090+TRT)</div>
+                <div class="stat-value">288 FPS</div>
+                <div class="stat-note">1080p interpolation</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Est. Speed (4060)</div>
+                <div class="stat-value">500+ FPS</div>
+                <div class="stat-note">320x240 (trivial)</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM</div>
+                <div class="stat-value">0.5-1 GB</div>
+                <div class="stat-note">Very lightweight</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Added Latency</div>
+                <div class="stat-value">&lt;3ms</div>
+                <div class="stat-note">At N64 resolution</div>
+            </div>
+        </div>
+        <div class="pros-cons">
+            <div class="pros">
+                <h4>Strengths</h4>
+                <ul>
+                    <li>Essentially free at retro resolutions</li>
+                    <li>TensorRT support available</li>
+                    <li>Mature, battle-tested in video processing</li>
+                    <li>Perfect complement to any slower generator</li>
+                </ul>
+            </div>
+            <div class="cons">
+                <h4>Weaknesses</h4>
+                <ul>
+                    <li>Only interpolates &mdash; doesn't generate new content</li>
+                    <li>Sprite-based content can cause motion artifacts</li>
+                    <li>Adds 1 frame of display latency (needs future frame)</li>
+                    <li>Palette-swapping confuses optical flow</li>
+                </ul>
+            </div>
+        </div>
+        <p style="margin-top: 16px;"><strong>Paper:</strong> <a href="https://arxiv.org/abs/2011.06294">arXiv:2011.06294</a> &bull; <strong>Code:</strong> <a href="https://github.com/hzwer/ECCV2022-RIFE">GitHub</a> &bull; <strong>TensorRT:</strong> <a href="https://github.com/yuvraj108c/ComfyUI-Rife-Tensorrt">GitHub</a></p>
+    </div>
+
+    <!-- GameSR -->
+    <div class="model-card tier-a">
+        <div class="model-header">
+            <div>
+                <div class="model-name">GameSR / FSRCNN / ESPCN</div>
+                <span class="tag tag-sr">Super-Resolution</span>
+            </div>
+            <span class="tier-badge">A TIER</span>
+        </div>
+        <p>Lightweight super-resolution models designed for gaming. GameSR achieves <strong>240 FPS</strong> with an engine-independent architecture. FSRCNN runs at 24 FPS even on CPU with only 12K parameters. These are the fastest option but only upscale &mdash; they don't transform or enhance style.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">GameSR Speed</div>
+                <div class="stat-value">240 FPS</div>
+                <div class="stat-note">Engine-independent</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">FSRCNN Speed</div>
+                <div class="stat-value">24 FPS</div>
+                <div class="stat-note">On CPU! 12K params</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM</div>
+                <div class="stat-value">&lt;0.5 GB</div>
+                <div class="stat-note">Negligible</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Upscale Factor</div>
+                <div class="stat-value">2-4x</div>
+                <div class="stat-note">320x240 &rarr; 1280x960</div>
+            </div>
+        </div>
+        <div class="pros-cons">
+            <div class="pros">
+                <h4>Strengths</h4>
+                <ul>
+                    <li>Blazing fast, leaves GPU headroom for emulation</li>
+                    <li>Proven in production (DLSS uses similar approach)</li>
+                    <li>Minimal VRAM usage</li>
+                    <li>Well-studied architectures with many variants</li>
+                </ul>
+            </div>
+            <div class="cons">
+                <h4>Weaknesses</h4>
+                <ul>
+                    <li>Only upscales &mdash; doesn't add new visual content</li>
+                    <li>Limited enhancement quality vs. diffusion/GAN</li>
+                    <li>May struggle with N64's unique texture style</li>
+                    <li>Less "wow factor" than generative approaches</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- SANA-Sprint -->
+    <div class="model-card tier-a">
+        <div class="model-header">
+            <div>
+                <div class="model-name">SANA-Sprint (0.6B)</div>
+                <span class="tag tag-diffusion">Diffusion</span>
+            </div>
+            <span class="tier-badge">A TIER</span>
+        </div>
+        <p>NVIDIA's ultra-fast diffusion model. Generates 1024x1024 in <strong>30ms on A100</strong> (1-step). 64x faster than FLUX-schnell. Open source. The most promising "pure diffusion" option, but needs evaluation for img2img conditioned generation and GTX 4060 performance.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Speed (A100)</div>
+                <div class="stat-value">30ms</div>
+                <div class="stat-note">1024x1024, 1-step</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Est. Speed (4060)</div>
+                <div class="stat-value">~15-30ms</div>
+                <div class="stat-note">320x240, estimated</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Parameters</div>
+                <div class="stat-value">0.6B</div>
+                <div class="stat-note">Compact model</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM</div>
+                <div class="stat-value">~3-4 GB</div>
+                <div class="stat-note">Estimated FP16</div>
+            </div>
+        </div>
+        <div class="pros-cons">
+            <div class="pros">
+                <h4>Strengths</h4>
+                <ul>
+                    <li>Extremely fast single-step generation</li>
+                    <li>NVIDIA-backed, optimized for their GPUs</li>
+                    <li>Open source with pretrained weights</li>
+                    <li>Small model size fits in 8GB VRAM</li>
+                </ul>
+            </div>
+            <div class="cons">
+                <h4>Weaknesses</h4>
+                <ul>
+                    <li>Primarily text-to-image, img2img needs adaptation</li>
+                    <li>A100 benchmarks may not translate to consumer GPUs</li>
+                    <li>Newer model, less community tooling</li>
+                    <li>ControlNet integration unclear</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- pix2pix-turbo -->
+    <div class="model-card tier-b">
+        <div class="model-header">
+            <div>
+                <div class="model-name">pix2pix-turbo</div>
+                <span class="tag tag-diffusion">Diffusion</span>
+            </div>
+            <span class="tier-badge">B TIER</span>
+        </div>
+        <p>One-step conditional image-to-image diffusion. The model you initially considered. While conceptually perfect (designed for paired image translation), its <strong>290ms inference at 512x512 on an A6000</strong> makes it too slow for real-time on a GTX 4060 without heavy optimization.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Speed (A6000)</div>
+                <div class="stat-value">290ms</div>
+                <div class="stat-note">512x512, 1-step</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Est. Speed (4060)</div>
+                <div class="stat-value">~100-200ms</div>
+                <div class="stat-note">320x240, estimated</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM</div>
+                <div class="stat-value">~6-8 GB</div>
+                <div class="stat-note">Tight on 4060</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">FPS (4060 est.)</div>
+                <div class="stat-value fps-bad">5-10 FPS</div>
+                <div class="stat-note">Below 24 FPS target</div>
+            </div>
+        </div>
+        <div class="pros-cons">
+            <div class="pros">
+                <h4>Strengths</h4>
+                <ul>
+                    <li>Purpose-built for paired image-to-image translation</li>
+                    <li>Single-step generation (no multi-step sampling)</li>
+                    <li>Good quality for style transfer tasks</li>
+                    <li>Open source with pretrained models</li>
+                </ul>
+            </div>
+            <div class="cons">
+                <h4>Weaknesses</h4>
+                <ul>
+                    <li>290ms on A6000 &mdash; too slow for real-time on consumer GPU</li>
+                    <li>Heavy model, may not fit in 8GB with TRT engine</li>
+                    <li>No StreamDiffusion integration</li>
+                    <li>Could work at 5-10 FPS + RIFE, but quality tradeoff</li>
+                </ul>
+            </div>
+        </div>
+        <p style="margin-top: 16px;"><strong>Paper:</strong> <a href="https://arxiv.org/abs/2403.12036">arXiv:2403.12036</a></p>
+    </div>
+
+    <!-- DIAMOND -->
+    <div class="model-card tier-b">
+        <div class="model-header">
+            <div>
+                <div class="model-name">DIAMOND (Diffusion World Model)</div>
+                <span class="tag tag-diffusion">Diffusion</span>
+                <span class="tag tag-hybrid">World Model</span>
+            </div>
+            <span class="tier-badge">B TIER</span>
+        </div>
+        <p>Microsoft's diffusion-based world model. Trains on a <strong>single RTX 4090</strong> and achieves ~10 FPS on RTX 3090. Fully open source. The most accessible neural game engine for experimentation. Plays Atari and CS:GO.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Speed (3090)</div>
+                <div class="stat-value">~10 FPS</div>
+                <div class="stat-note">Atari resolution</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Training GPU</div>
+                <div class="stat-value">1x 4090</div>
+                <div class="stat-note">12 days to train</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Open Source</div>
+                <div class="stat-value">Full</div>
+                <div class="stat-note">Code + weights</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Architecture</div>
+                <div class="stat-value">EDM UNet</div>
+                <div class="stat-note">Action-conditioned</div>
+            </div>
+        </div>
+        <div class="pros-cons">
+            <div class="pros">
+                <h4>Strengths</h4>
+                <ul>
+                    <li>Fully open source, trainable on single consumer GPU</li>
+                    <li>Proven on multiple games (Atari, CS:GO)</li>
+                    <li>Action-conditioned &mdash; takes controller inputs</li>
+                    <li>NeurIPS 2024 Spotlight &mdash; solid research</li>
+                </ul>
+            </div>
+            <div class="cons">
+                <h4>Weaknesses</h4>
+                <ul>
+                    <li>Only ~10 FPS without optimization</li>
+                    <li>World model approach &mdash; replaces game engine entirely</li>
+                    <li>12 days training on 4090 for each game</li>
+                    <li>N64 3D content more complex than Atari</li>
+                </ul>
+            </div>
+        </div>
+        <p style="margin-top: 16px;"><strong>Paper:</strong> <a href="https://arxiv.org/abs/2405.12399">arXiv:2405.12399</a> &bull; <strong>Code:</strong> <a href="https://github.com/eloialonso/diamond">GitHub</a></p>
+    </div>
+
+    <!-- GameNGen -->
+    <div class="model-card tier-c">
+        <div class="model-header">
+            <div>
+                <div class="model-name">GameNGen (Google)</div>
+                <span class="tag tag-diffusion">Diffusion</span>
+                <span class="tag tag-hybrid">World Model</span>
+            </div>
+            <span class="tier-badge">C TIER (RESEARCH ONLY)</span>
+        </div>
+        <p>Google's landmark paper proving diffusion models can <em>be</em> game engines. Runs DOOM at 20 FPS on a TPU. The concept is directly relevant to your project, but the weights are not released and the approach is compute-heavy. Community reproductions exist.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Speed (TPU v5)</div>
+                <div class="stat-value">20 FPS</div>
+                <div class="stat-note">160x120 resolution</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Backbone</div>
+                <div class="stat-value">SD 1.4</div>
+                <div class="stat-note">Fine-tuned, 4 DDIM steps</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Open Source</div>
+                <div class="stat-value">No*</div>
+                <div class="stat-note">*Community repros exist</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Est. Speed (4060)</div>
+                <div class="stat-value fps-ok">~15-20 FPS</div>
+                <div class="stat-note">320x240, 4 steps + TRT</div>
+            </div>
+        </div>
+        <p style="margin-top: 16px;"><strong>Paper:</strong> <a href="https://arxiv.org/abs/2408.14837">arXiv:2408.14837</a> &bull; <strong>Repro:</strong> <a href="https://github.com/arnaudstiegler/gameNgen-repro">GitHub</a></p>
+    </div>
+
+    <!-- LCM -->
+    <div class="model-card tier-a">
+        <div class="model-header">
+            <div>
+                <div class="model-name">LCM / LCM-LoRA + ControlNet</div>
+                <span class="tag tag-diffusion">Diffusion</span>
+            </div>
+            <span class="tier-badge">A TIER</span>
+        </div>
+        <p>Latent Consistency Models distilled from SD/SDXL. Generate in <strong>2-4 steps</strong> instead of 50. Drop-in LCM-LoRA adapters work with any SD fine-tune and ControlNet. Combined with StreamDiffusion, this enables real-time conditioned generation.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Steps Needed</div>
+                <div class="stat-value">2-4</div>
+                <div class="stat-note">vs. 20-50 standard</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Compatibility</div>
+                <div class="stat-value">Universal</div>
+                <div class="stat-note">Any SD fine-tune</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">ControlNet</div>
+                <div class="stat-value">Yes</div>
+                <div class="stat-note">No code changes needed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Quality</div>
+                <div class="stat-value">Good</div>
+                <div class="stat-note">Slight quality loss vs. full sampling</div>
+            </div>
+        </div>
+        <p style="margin-top: 16px;"><strong>Paper:</strong> <a href="https://arxiv.org/abs/2310.04378">arXiv:2310.04378</a> &bull; <strong>LCM-LoRA:</strong> <a href="https://huggingface.co/blog/lcm_lora">HuggingFace Guide</a></p>
+    </div>
+
+    <!-- DMD2 -->
+    <div class="model-card tier-a">
+        <div class="model-header">
+            <div>
+                <div class="model-name">DMD2 (Distribution Matching Distillation v2)</div>
+                <span class="tag tag-diffusion">Diffusion</span>
+            </div>
+            <span class="tier-badge">A TIER</span>
+        </div>
+        <p>NeurIPS 2024 Oral. Achieves FID 1.28 in <strong>one single step</strong> &mdash; the best quality among all one-step diffusion methods. Open source. If quality is paramount, this is the one-step diffusion model to use.</p>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Steps</div>
+                <div class="stat-value">1</div>
+                <div class="stat-note">Single-step generation</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">FID Score</div>
+                <div class="stat-value">1.28</div>
+                <div class="stat-note">Best one-step quality</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Open Source</div>
+                <div class="stat-value">Yes</div>
+                <div class="stat-note">Weights available</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Award</div>
+                <div class="stat-value">Oral</div>
+                <div class="stat-note">NeurIPS 2024</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="comparison">4. Head-to-Head Comparison</h2>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Model</th>
+                    <th>Type</th>
+                    <th>Est. FPS (4060, 320x240)</th>
+                    <th>VRAM</th>
+                    <th>Open Source</th>
+                    <th>img2img</th>
+                    <th>TensorRT</th>
+                    <th>Verdict</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>StreamDiffusion + Turbo</strong></td>
+                    <td>Diffusion</td>
+                    <td class="fps-good">30-50 FPS</td>
+                    <td>4-6 GB</td>
+                    <td>Yes</td>
+                    <td>Yes (native)</td>
+                    <td>Yes (built-in)</td>
+                    <td class="fps-good">Best overall</td>
+                </tr>
+                <tr>
+                    <td><strong>HyPER-GAN</strong></td>
+                    <td>GAN</td>
+                    <td class="fps-good">100+ FPS</td>
+                    <td>0.8 GB</td>
+                    <td>Yes</td>
+                    <td>Yes</td>
+                    <td>Possible</td>
+                    <td class="fps-good">Fastest</td>
+                </tr>
+                <tr>
+                    <td><strong>RIFE</strong></td>
+                    <td>Interpolation</td>
+                    <td class="fps-good">500+ FPS</td>
+                    <td>0.5 GB</td>
+                    <td>Yes</td>
+                    <td>N/A</td>
+                    <td>Yes</td>
+                    <td class="fps-good">Multiplier</td>
+                </tr>
+                <tr>
+                    <td><strong>GameSR / FSRCNN</strong></td>
+                    <td>Super-Res</td>
+                    <td class="fps-good">200+ FPS</td>
+                    <td>&lt;0.5 GB</td>
+                    <td>Yes</td>
+                    <td>N/A (upscale)</td>
+                    <td>Yes</td>
+                    <td class="fps-good">Simplest</td>
+                </tr>
+                <tr>
+                    <td><strong>SANA-Sprint</strong></td>
+                    <td>Diffusion</td>
+                    <td class="fps-good">30-60 FPS</td>
+                    <td>3-4 GB</td>
+                    <td>Yes</td>
+                    <td>Needs adapter</td>
+                    <td>Possible</td>
+                    <td class="fps-ok">Promising</td>
+                </tr>
+                <tr>
+                    <td><strong>LCM + ControlNet</strong></td>
+                    <td>Diffusion</td>
+                    <td class="fps-ok">15-30 FPS</td>
+                    <td>5-8 GB</td>
+                    <td>Yes</td>
+                    <td>Yes (ControlNet)</td>
+                    <td>Yes</td>
+                    <td class="fps-ok">High quality</td>
+                </tr>
+                <tr>
+                    <td><strong>DMD2</strong></td>
+                    <td>Diffusion</td>
+                    <td class="fps-ok">20-40 FPS</td>
+                    <td>4-6 GB</td>
+                    <td>Yes</td>
+                    <td>Needs adapter</td>
+                    <td>Possible</td>
+                    <td class="fps-ok">Best 1-step quality</td>
+                </tr>
+                <tr>
+                    <td><strong>pix2pix-turbo</strong></td>
+                    <td>Diffusion</td>
+                    <td class="fps-bad">5-10 FPS</td>
+                    <td>6-8 GB</td>
+                    <td>Yes</td>
+                    <td>Yes (native)</td>
+                    <td>Possible</td>
+                    <td class="fps-bad">Too slow alone</td>
+                </tr>
+                <tr>
+                    <td><strong>DIAMOND</strong></td>
+                    <td>World Model</td>
+                    <td class="fps-bad">~8-12 FPS</td>
+                    <td>6-8 GB</td>
+                    <td>Yes</td>
+                    <td>Action-conditioned</td>
+                    <td>Possible</td>
+                    <td class="fps-ok">Experimental</td>
+                </tr>
+                <tr>
+                    <td><strong>Real-ESRGAN</strong></td>
+                    <td>Super-Res</td>
+                    <td class="fps-ok">~30 FPS</td>
+                    <td>1-2 GB</td>
+                    <td>Yes</td>
+                    <td>N/A (upscale)</td>
+                    <td>Yes</td>
+                    <td class="fps-ok">Quality upscale</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box warning">
+        <div class="box-title">Important: These Are Estimates</div>
+        <p>FPS numbers for the GTX 4060 at 320x240 are <strong>extrapolated</strong> from benchmarks at higher resolutions on different GPUs. The next step should be running actual benchmarks on your hardware. Resolution scaling is approximately linear for convolution-heavy models but sub-linear for attention-heavy models.</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="architecture">5. Recommended Architectures</h2>
+
+    <h3>Option A: Maximum Speed (Recommended Starting Point)</h3>
+    <p>Use HyPER-GAN or a lightweight super-resolution model for frame enhancement, with RIFE for frame interpolation. This is the simplest to implement and guaranteed to hit 24+ FPS.</p>
+
+    <div class="arch-box">
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <div class="step-name">N64 Emulator</div>
+                <div class="step-detail">320x240 @ 30fps</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">HyPER-GAN</div>
+                <div class="step-detail">Enhancement ~8ms</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">RIFE 2x</div>
+                <div class="step-detail">Interpolation ~2ms</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">Output</div>
+                <div class="step-detail">720p @ 60fps</div>
+            </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Total Latency</div>
+                <div class="stat-value">~10ms</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM Usage</div>
+                <div class="stat-value">~1.5 GB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output FPS</div>
+                <div class="stat-value">60+</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Difficulty</div>
+                <div class="stat-value">Medium</div>
+            </div>
+        </div>
+    </div>
+
+    <h3>Option B: Diffusion-Powered (Most Impressive)</h3>
+    <p>Use StreamDiffusion with SD-Turbo/LCM for full diffusion-based frame transformation. This gives the most dramatic visual transformation but requires more optimization work.</p>
+
+    <div class="arch-box">
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <div class="step-name">N64 Emulator</div>
+                <div class="step-detail">320x240 @ 30fps</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">StreamDiffusion</div>
+                <div class="step-detail">SD-Turbo 1-step ~20ms</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">RIFE 2x</div>
+                <div class="step-detail">Interpolation ~2ms</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">Output</div>
+                <div class="step-detail">512x384 @ 48-60fps</div>
+            </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Total Latency</div>
+                <div class="stat-value">~22ms</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM Usage</div>
+                <div class="stat-value">~5-6 GB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output FPS</div>
+                <div class="stat-value">24-50</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Difficulty</div>
+                <div class="stat-value">High</div>
+            </div>
+        </div>
+    </div>
+
+    <h3>Option C: Hybrid Neural Game Engine (Most Ambitious)</h3>
+    <p>Train a DIAMOND-style world model on N64 game footage. The model itself becomes the renderer, conditioned on controller inputs. Highest risk but most novel result.</p>
+
+    <div class="arch-box">
+        <div class="pipeline">
+            <div class="pipeline-step">
+                <div class="step-name">Controller Input</div>
+                <div class="step-detail">+ Previous Frames</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">DIAMOND / GameNGen</div>
+                <div class="step-detail">World model ~80ms</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">RIFE 3x</div>
+                <div class="step-detail">Interpolation ~2ms</div>
+            </div>
+            <span class="pipeline-arrow">&rarr;</span>
+            <div class="pipeline-step">
+                <div class="step-name">Output</div>
+                <div class="step-detail">320x240 @ 24-36fps</div>
+            </div>
+        </div>
+        <div class="stats-grid">
+            <div class="stat">
+                <div class="stat-label">Total Latency</div>
+                <div class="stat-value">~80-100ms</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">VRAM Usage</div>
+                <div class="stat-value">6-8 GB</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Output FPS</div>
+                <div class="stat-value">10-36</div>
+            </div>
+            <div class="stat">
+                <div class="stat-label">Difficulty</div>
+                <div class="stat-value">Very High</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="optimizations">6. Optimization Stack</h2>
+
+    <p>All approaches benefit from the same set of optimizations. Stack these for compounding speedups:</p>
+
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>Optimization</th>
+                    <th>Speedup</th>
+                    <th>Applies To</th>
+                    <th>Effort</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>TensorRT compilation</strong></td>
+                    <td class="fps-good">1.5-2x</td>
+                    <td>All models</td>
+                    <td>Medium</td>
+                    <td>Layer fusion, kernel auto-tuning. Built into StreamDiffusion.</td>
+                </tr>
+                <tr>
+                    <td><strong>FP16 inference</strong></td>
+                    <td class="fps-good">~2x vs FP32</td>
+                    <td>All models</td>
+                    <td>Low</td>
+                    <td>Standard on RTX 4060. Essentially free.</td>
+                </tr>
+                <tr>
+                    <td><strong>INT8 quantization</strong></td>
+                    <td class="fps-ok">1.3-1.5x vs FP16</td>
+                    <td>Diffusion models</td>
+                    <td>Medium</td>
+                    <td>35-45% speedup for SDXL with minimal quality loss.</td>
+                </tr>
+                <tr>
+                    <td><strong>torch.compile</strong></td>
+                    <td class="fps-ok">1.3-2x</td>
+                    <td>PyTorch models</td>
+                    <td>Low</td>
+                    <td>One-line change. Composable with quantization.</td>
+                </tr>
+                <tr>
+                    <td><strong>DeepCache</strong></td>
+                    <td class="fps-good">2-4x</td>
+                    <td>Multi-step diffusion</td>
+                    <td>Low</td>
+                    <td>Caches U-Net features between steps. Training-free.</td>
+                </tr>
+                <tr>
+                    <td><strong>Token Merging (ToMe)</strong></td>
+                    <td class="fps-ok">1.2-1.5x</td>
+                    <td>Attention models</td>
+                    <td>Low</td>
+                    <td>Reduces token count in self-attention layers.</td>
+                </tr>
+                <tr>
+                    <td><strong>Tiny VAE</strong></td>
+                    <td class="fps-ok">10x decode</td>
+                    <td>SD pipelines</td>
+                    <td>Low</td>
+                    <td>Smaller VAE decoder. Used in StreamDiffusion.</td>
+                </tr>
+                <tr>
+                    <td><strong>ONNX Runtime</strong></td>
+                    <td class="fps-ok">1.3-1.5x</td>
+                    <td>All models</td>
+                    <td>Medium</td>
+                    <td>Alternative to TensorRT. More portable.</td>
+                </tr>
+                <tr>
+                    <td><strong>Stochastic Similarity Filter</strong></td>
+                    <td class="fps-good">Variable</td>
+                    <td>Interactive pipelines</td>
+                    <td>Low</td>
+                    <td>Skip computation for static/similar frames.</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="info-box info">
+        <div class="box-title">Compounding Effect</div>
+        <p>These optimizations compound multiplicatively. For example: <strong>TensorRT (1.7x) &times; INT8 (1.3x) &times; DeepCache (2x) = ~4.4x total speedup</strong>. A diffusion model running at 10 FPS baseline could reach 44 FPS with all optimizations stacked.</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="cloud">7. Cloud GPU Options (Fallback)</h2>
+
+    <div class="info-box warning">
+        <div class="box-title">Cloud Latency Warning</div>
+        <p>Cloud rendering adds <strong>20-50ms minimum network latency</strong> (speed-of-light constraint). For a 24 FPS target (41.67ms frame budget), network round-trip alone could consume the entire budget. <strong>Local GPU is strongly preferred for real-time interactive applications.</strong> Cloud is viable only for: (1) training the model, (2) offline batch processing, or (3) if you accept significant input lag.</p>
+    </div>
+
+    <h3>If You Need Cloud (Training or Non-Interactive Use)</h3>
+
+    <div class="cloud-grid">
+        <div class="cloud-card">
+            <div class="provider">Vast.ai (Community)</div>
+            <div class="price">$1.99<span class="price-unit">/hr (H100)</span></div>
+            <p style="margin-top: 8px; font-size: 0.9em; color: var(--text-muted);">Marketplace model. Cheapest H100 access. Variable availability. Good for training runs.</p>
+        </div>
+        <div class="cloud-card">
+            <div class="provider">TensorDock</div>
+            <div class="price">$1.91<span class="price-unit">/hr (H100 spot)</span></div>
+            <p style="margin-top: 8px; font-size: 0.9em; color: var(--text-muted);">H100 SXM5, spot pricing. $2.25/hr on-demand. Good value.</p>
+        </div>
+        <div class="cloud-card">
+            <div class="provider">Lambda Labs</div>
+            <div class="price">$2.49<span class="price-unit">/hr (H100 PCIe)</span></div>
+            <p style="margin-top: 8px; font-size: 0.9em; color: var(--text-muted);">$3.29/hr SXM. Reliable. A100 under $1.29/hr. Best developer experience.</p>
+        </div>
+        <div class="cloud-card">
+            <div class="provider">RunPod</div>
+            <div class="price">$2.17<span class="price-unit">/hr (H100)</span></div>
+            <p style="margin-top: 8px; font-size: 0.9em; color: var(--text-muted);">Serverless option available. Good for burst inference workloads.</p>
+        </div>
+        <div class="cloud-card">
+            <div class="provider">Modal</div>
+            <div class="price">$3.50<span class="price-unit">/hr (A100 40GB)</span></div>
+            <p style="margin-top: 8px; font-size: 0.9em; color: var(--text-muted);">Per-second billing, 2-4s cold starts. Best for development and prototyping.</p>
+        </div>
+        <div class="cloud-card">
+            <div class="provider">L40S (Various)</div>
+            <div class="price">$0.40<span class="price-unit">/hr</span></div>
+            <p style="margin-top: 8px; font-size: 0.9em; color: var(--text-muted);">48GB VRAM with FP8 support. Best value for inference. ~70% of H100 speed.</p>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="existing">8. Existing Related Projects</h2>
+
+    <div class="model-card tier-a">
+        <div class="model-header">
+            <div>
+                <div class="model-name">RT64 (N64 + Ray Tracing + DLSS)</div>
+            </div>
+            <span class="tier-badge">CLOSEST TO YOUR GOAL</span>
+        </div>
+        <p>An existing open-source project that adds <strong>ray tracing and NVIDIA DLSS support to N64 games</strong> (Zelda: Ocarina of Time, SM64). This is the closest existing project to what you're building. It uses NVIDIA's proprietary DLSS rather than open-source models, but the architecture is directly relevant.</p>
+        <p><strong>Link:</strong> <a href="https://github.com/DarioSamo/rt64">github.com/DarioSamo/rt64</a></p>
+    </div>
+
+    <div class="model-card tier-b">
+        <div class="model-header">
+            <div>
+                <div class="model-name">Lossless Scaling (Steam)</div>
+            </div>
+            <span class="tier-badge">COMMERCIAL REFERENCE</span>
+        </div>
+        <p>A $7 app on Steam that provides <strong>real-time AI frame generation + upscaling for any application</strong>, including emulators. Uses AMD FSR / NVIDIA-style frame gen. Worth testing as a baseline to beat with your open-source approach.</p>
+    </div>
+
+    <div class="model-card tier-b">
+        <div class="model-header">
+            <div>
+                <div class="model-name">Open-Oasis (Decart/Etched)</div>
+            </div>
+            <span class="tier-badge">REFERENCE</span>
+        </div>
+        <p>Open-source foundation model for real-time interactive world generation. Generates Minecraft-like worlds in real-time. Demonstrates that transformer-based world models can run interactively.</p>
+        <p><strong>Link:</strong> <a href="https://github.com/etched-ai/open-oasis">github.com/etched-ai/open-oasis</a></p>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="verdict">9. Final Verdict &amp; Next Steps</h2>
+
+    <div class="info-box recommend">
+        <div class="box-title">Recommended Path Forward</div>
+        <ol style="padding-left: 20px; margin-top: 12px;">
+            <li style="margin-bottom: 12px;">
+                <strong>Step 1 &mdash; Benchmark StreamDiffusion on your GTX 4060</strong><br>
+                Install StreamDiffusion, run the img2img demo at 320x240 with SD-Turbo (1-step) and measure actual FPS. This will tell us immediately if diffusion-based frame gen is viable locally.
+            </li>
+            <li style="margin-bottom: 12px;">
+                <strong>Step 2 &mdash; Benchmark HyPER-GAN as the fast alternative</strong><br>
+                Clone the repo, run inference at 320x240&rarr;720p. This should be trivially fast and gives you a guaranteed baseline.
+            </li>
+            <li style="margin-bottom: 12px;">
+                <strong>Step 3 &mdash; Test RIFE interpolation</strong><br>
+                Verify that RIFE can double/triple your framerate at N64 resolution with &lt;3ms latency.
+            </li>
+            <li style="margin-bottom: 12px;">
+                <strong>Step 4 &mdash; Choose your architecture</strong><br>
+                Based on benchmarks: if StreamDiffusion hits 24+ FPS, go diffusion. If not, go HyPER-GAN + RIFE. Either way, you'll have real numbers.
+            </li>
+            <li style="margin-bottom: 12px;">
+                <strong>Step 5 &mdash; Integrate with N64 emulator</strong><br>
+                Hook into an open-source emulator (Mupen64Plus, simple64) to capture frames, pipe through your chosen model, and display the result.
+            </li>
+        </ol>
+    </div>
+
+    <h3>Decision Matrix</h3>
+    <div class="table-wrapper">
+        <table>
+            <thead>
+                <tr>
+                    <th>If you want...</th>
+                    <th>Use this</th>
+                    <th>Expected FPS (4060)</th>
+                    <th>Risk Level</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Guaranteed 60+ FPS, simple setup</td>
+                    <td>HyPER-GAN + RIFE</td>
+                    <td class="fps-good">60-120 FPS</td>
+                    <td class="fps-good">Low</td>
+                </tr>
+                <tr>
+                    <td>Best visual quality, still real-time</td>
+                    <td>StreamDiffusion + SD-Turbo + TRT</td>
+                    <td class="fps-ok">30-50 FPS</td>
+                    <td class="fps-ok">Medium</td>
+                </tr>
+                <tr>
+                    <td>Clean upscaling, no style change</td>
+                    <td>GameSR / Real-ESRGAN + RIFE</td>
+                    <td class="fps-good">60-200 FPS</td>
+                    <td class="fps-good">Low</td>
+                </tr>
+                <tr>
+                    <td>Most ambitious, research-level result</td>
+                    <td>DIAMOND-style world model + RIFE</td>
+                    <td class="fps-bad">10-24 FPS</td>
+                    <td class="fps-bad">Very High</td>
+                </tr>
+                <tr>
+                    <td>Fastest path to "DLSS-like" result</td>
+                    <td>ControlNet + LCM-LoRA + StreamDiffusion</td>
+                    <td class="fps-ok">20-40 FPS</td>
+                    <td class="fps-ok">Medium</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2 id="refs">10. References &amp; Papers</h2>
+
+    <h4>Core Papers</h4>
+    <ul style="padding-left: 24px;">
+        <li><a href="https://arxiv.org/abs/2312.12491">StreamDiffusion: Real-Time Interactive Generation</a> (2023)</li>
+        <li><a href="https://arxiv.org/abs/2408.14837">GameNGen: Diffusion Models Are Real-Time Game Engines</a> (2024, ICLR 2025)</li>
+        <li><a href="https://arxiv.org/abs/2405.12399">DIAMOND: Diffusion for World Modeling</a> (2024, NeurIPS 2024)</li>
+        <li><a href="https://arxiv.org/abs/2403.12036">pix2pix-turbo: One-Step Image-to-Image</a> (2024)</li>
+        <li><a href="https://arxiv.org/abs/2603.10604">HyPER-GAN: Real-Time Game Rendering Enhancement</a> (2025)</li>
+        <li><a href="https://arxiv.org/abs/2310.04378">Latent Consistency Models</a> (2023)</li>
+        <li><a href="https://arxiv.org/abs/2303.01469">Consistency Models</a> (OpenAI, 2023)</li>
+        <li><a href="https://arxiv.org/abs/2011.06294">RIFE: Real-Time Intermediate Flow Estimation</a> (2020)</li>
+        <li><a href="https://arxiv.org/abs/2508.17061">REGEN: Real-Time Photorealism Enhancement</a> (2025)</li>
+    </ul>
+
+    <h4>Distillation &amp; Acceleration</h4>
+    <ul style="padding-left: 24px;">
+        <li><a href="https://arxiv.org/abs/2311.17042">Adversarial Diffusion Distillation (SDXL-Turbo)</a> (2023)</li>
+        <li><a href="https://arxiv.org/abs/2402.01345">SDXL-Lightning</a> (2024)</li>
+        <li><a href="https://huggingface.co/blog/lcm_lora">LCM-LoRA: Universal SD Acceleration</a></li>
+        <li>DMD2: Distribution Matching Distillation v2 (NeurIPS 2024 Oral)</li>
+        <li>SANA-Sprint: NVIDIA 0.6B fast diffusion</li>
+    </ul>
+
+    <h4>Optimization Techniques</h4>
+    <ul style="padding-left: 24px;">
+        <li><a href="https://github.com/horseee/DeepCache">DeepCache: Training-Free Diffusion Acceleration</a> (CVPR 2024)</li>
+        <li><a href="https://developer.nvidia.com/blog/new-stable-diffusion-models-accelerated-with-nvidia-tensorrt/">TensorRT for Stable Diffusion</a> (NVIDIA)</li>
+        <li><a href="https://arxiv.org/abs/2501.00946">CA-ToMe: Cached Adaptive Token Merging</a></li>
+        <li><a href="https://github.com/sayakpaul/diffusers-torchao">diffusers-torchao Quantization Recipes</a></li>
+    </ul>
+
+    <h4>Game-Specific</h4>
+    <ul style="padding-left: 24px;">
+        <li><a href="https://github.com/DarioSamo/rt64">RT64: N64 Ray Tracing + DLSS</a></li>
+        <li><a href="https://github.com/etched-ai/open-oasis">Open-Oasis: Interactive World Generation</a></li>
+        <li><a href="https://github.com/arnaudstiegler/gameNgen-repro">GameNGen Community Reproduction</a></li>
+        <li><a href="https://github.com/eloialonso/diamond">DIAMOND Source Code</a></li>
+        <li><a href="https://arxiv.org/abs/2602.00608">Scalable Generative Game Engine</a> (2026)</li>
+    </ul>
+
+</div>
+
+<footer>
+    <p>Research compiled March 2026 &bull; N64 Neural DLSS Project</p>
+    <p>Models and benchmarks are evolving rapidly. Re-verify speeds on your hardware before committing to an architecture.</p>
+</footer>
+
+</body>
+</html>
