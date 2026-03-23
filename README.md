@@ -4,6 +4,8 @@ A naive approach to NVIDIA's DLSS concept applied to N64 emulation: capture fram
 
 This is an experiment in real-time diffusion-based frame enhancement. It runs at **39 FPS on a GTX 4060** at N64's native 320x240 resolution with TensorRT, well above the 24 FPS playability threshold.
 
+![N64 DLSS in action](exampleImage.png)
+
 ## Architecture
 
 ```
