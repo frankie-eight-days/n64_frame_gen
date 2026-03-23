@@ -155,7 +155,7 @@ Double-click `run.bat`, or:
 
 ```bash
 source venv310/Scripts/activate
-python n64_dlss_live.py
+python src/n64_dlss_live.py
 ```
 
 The first run will build TensorRT engines (~6.5 minutes), which are cached in `engines/` for subsequent runs.
@@ -218,13 +218,14 @@ ControlNet provides structural conditioning so the diffusion model can apply str
 
 ```
 n64_frame_gen/
-├── n64_dlss_live.py           # Main application
-├── ui_utils.py                # ToolTip, set_widget_state, TOOLTIPS
-├── temporal_blend.py           # Flow-guided temporal blending + occlusion
-├── noise_warping.py            # Flow-warped noise for coherent denoising
-├── sm64_state_reader.py        # SM64 game state reader (camera, motion vectors)
-├── depth_estimator.py          # MiDaS depth estimation wrapper
-├── run.bat                     # Windows launcher
+├── run.bat                     # Windows launcher (double-click to run)
+├── src/
+│   ├── n64_dlss_live.py       # Main application
+│   ├── ui_utils.py            # ToolTip, set_widget_state, TOOLTIPS
+│   ├── temporal_blend.py      # Flow-guided temporal blending + occlusion
+│   ├── noise_warping.py       # Flow-warped noise for coherent denoising
+│   ├── sm64_state_reader.py   # SM64 game state reader (camera, motion vectors)
+│   └── depth_estimator.py     # MiDaS depth estimation wrapper
 ├── n64Emulator/
 │   ├── n64_frontend.py        # Libretro frontend (ctypes + pygame + OpenGL)
 │   └── cores/                 # Place libretro core DLLs here

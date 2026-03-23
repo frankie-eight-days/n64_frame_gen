@@ -27,7 +27,9 @@ from tkinter import ttk
 import cv2
 from ui_utils import ToolTip, set_widget_state, TOOLTIPS
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPT_DIR = os.path.dirname(SRC_DIR)  # repo root
+sys.path.insert(0, SRC_DIR)
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "StreamDiffusion"))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "n64emulator"))
 
