@@ -46,7 +46,35 @@ All examples below are from Super Mario 64 (320x240), processed in a single diff
 - **Frame Capture**: libretro `video_refresh` callback grabs each frame as a numpy array
 - **Diffusion**: StreamDiffusion wraps SD-Turbo in a pipelined img2img loop with TensorRT engines
 - **Display**: pygame + OpenGL renders the (optionally enhanced) frame as a textured quad
-- **Control Panel**: tkinter window with prompt editing, t_index/delta sliders, and style presets
+- **Control Panel**: Two-column tkinter panel with tooltips, conditional controls, and live status
+
+## Features
+
+### Control Panel
+- **Two-column layout** (620x720) — frequently used controls on the left, advanced tuning on the right
+- **Tooltips** on every control explaining what it does
+- **Conditional activation** — controls grey out when they don't apply to the current mode
+- **6 style presets** — Default Enhance, Studio Ghibli, Watercolor, Oil Painting, Synthwave, Modern Game
+- **Live FPS counters** for both diffusion and emulator
+
+### ControlNet Structural Guidance
+- **Canny edge detection** — preserves outlines
+- **MiDaS depth estimation** — neural depth map conditioning
+- **N64 Z-buffer depth** — reads the native depth buffer directly from emulator RDRAM (fastest, most accurate)
+- Adjustable conditioning scale and canny thresholds
+- Z-buffer debug overlay and snapshot export
+
+### Temporal Consistency
+- **Off** — no temporal blending
+- **Naive Blend** — simple alpha blend with previous frame
+- **Flow-Guided** — optical flow warping with TAA-style clamping and Z-buffer occlusion detection
+- **Feature Bank (V2V)** — attention-based feature injection for temporal coherence (uses PyTorch, no TensorRT)
+- **V2V + Flow** — combined flow warping and feature injection (best quality)
+- Warped noise option for coherent denoising across frames
+- Motion source selection: optical flow or N64 game state (SM64 US)
+
+### Raw Frame Comparison
+A separate "N64 Raw (No AI)" window shows the unprocessed N64 frame for side-by-side comparison.
 
 ## Performance
 
@@ -57,7 +85,7 @@ Benchmarked on **NVIDIA GTX 4060 (8GB VRAM)** at 320x240:
 | No acceleration (Python 3.13) | 24.0 | 41.7ms | 2.4 GB |
 | **TensorRT (Python 3.10)** | **39.0** | **25.7ms** | **2.43 GB** |
 
-5.5 GB VRAM headroom remaining for future ControlNet integration.
+V2V modes use PyTorch instead of TensorRT (required for attention layer access) and will be slower.
 
 ## Setup
 
@@ -71,8 +99,8 @@ Benchmarked on **NVIDIA GTX 4060 (8GB VRAM)** at 320x240:
 ### 1. Clone this repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/n64-dlss.git
-cd n64-dlss
+git clone https://github.com/frankie-eight-days/n64_frame_gen.git
+cd n64_frame_gen
 ```
 
 ### 2. Set up StreamDiffusion
@@ -139,6 +167,8 @@ Or modify the path in `n64_dlss_live.py`.
 
 ### 6. Run
 
+Double-click `run.bat`, or:
+
 ```bash
 source venv310/Scripts/activate
 python n64_dlss_live.py
@@ -183,28 +213,34 @@ The key parameter is **t_index** — the denoising timestep where the process st
 - **High t_index (40-49)**: Faithful to original, minimal effect
 - **Sweet spot (~35)**: Mild enhancement while preserving the scene
 
-### Limitations
+### Temporal Consistency
 
-Without structural conditioning (ControlNet/T2I-Adapter), there's a fundamental tradeoff between style intensity and scene preservation. The model can either faithfully reproduce the scene OR apply a strong style, but not both simultaneously. See `scratchpad.md` for plans to address this with ControlNet + depth buffer extraction from the emulator.
+Without temporal consistency, each frame is processed independently, causing flickering. Several modes address this:
 
-## Style Presets
+- **Naive Blend**: Simple alpha blend between current and previous frame — stable but introduces ghosting
+- **Flow-Guided**: Uses DIS optical flow to warp the previous frame, TAA-style neighborhood clamping, and Z-buffer occlusion detection to blend only in visible regions
+- **Feature Bank (V2V)**: Injects cached attention features from previous frames into the UNet for coherent generation without pixel-space blending
+- **V2V + Flow**: Combines both approaches for the best temporal coherence
 
-The control panel includes 6 built-in presets:
+### ControlNet
 
-| Preset | Prompt | t_index |
-|--------|--------|---------|
-| Default Enhance | high quality, enhanced, sharp, detailed, remastered | 35 |
-| Studio Ghibli | studio ghibli style, anime background, lush detailed | 32 |
-| Watercolor | watercolor painting, soft edges, flowing colors, artistic | 33 |
-| Oil Painting | oil painting, thick brushstrokes, impressionist, painterly | 33 |
-| Synthwave | neon synthwave, glowing edges, cyberpunk, purple blue | 30 |
-| Modern Game | modern AAA video game, ray traced, photorealistic, UE5 | 35 |
+ControlNet provides structural conditioning so the diffusion model can apply stronger styles while preserving scene geometry. Three conditioning modes are available:
+
+- **Canny**: Edge detection — good for preserving outlines
+- **Depth (MiDaS)**: Neural depth estimation — works with any game
+- **Depth (Z-Buffer)**: Reads the N64's native 14-bit Z-buffer directly from emulator RDRAM — fastest and most accurate
 
 ## Project Structure
 
 ```
 n64-dlss/
-├── n64_dlss_live.py          # Main integration script
+├── n64_dlss_live.py          # Main application
+├── ui_utils.py               # ToolTip, set_widget_state, TOOLTIPS
+├── temporal_blend.py          # Flow-guided temporal blending + occlusion
+├── noise_warping.py           # Flow-warped noise for coherent denoising
+├── sm64_state_reader.py       # SM64 game state reader (camera, motion vectors)
+├── depth_estimator.py         # MiDaS depth estimation wrapper
+├── run.bat                    # Windows launcher
 ├── n64Emulator/
 │   ├── n64_frontend.py       # Libretro frontend (ctypes + pygame + OpenGL)
 │   └── cores/                # Place libretro core DLLs here
@@ -214,7 +250,7 @@ n64-dlss/
 ├── benchmark_tensorrt.py
 ├── benchmark_results.json
 ├── test_cartoon.py           # Style transfer experiments
-├── scratchpad.md             # ControlNet integration plans
+├── scratchpad.md             # Development notes
 ├── research_summary.md       # Model research notes
 ├── research_real_time_frame_generation.md
 └── research_report.html      # Full research report
@@ -222,10 +258,10 @@ n64-dlss/
 
 ## Future Work
 
-- **ControlNet / T2I-Adapter integration** — Use the emulator's depth buffer (z-buffer) as structural conditioning to enable strong style transfer while preserving scene layout. See `scratchpad.md` for detailed plans.
 - **RIFE frame interpolation** — Insert interpolated frames between diffusion outputs to reach 60+ FPS effective framerate
-- **INT8 quantization** — Further TensorRT optimization
+- **INT8 quantization** — Further TensorRT optimization for the UNet
 - **Audio passthrough** — Currently audio is silenced
+- **V2V + TensorRT** — Custom TensorRT engines that preserve attention layer access
 
 ## References
 
