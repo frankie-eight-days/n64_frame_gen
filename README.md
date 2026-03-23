@@ -4,22 +4,6 @@ A naive approach to NVIDIA's DLSS concept applied to N64 emulation: capture fram
 
 This is an experiment in real-time diffusion-based frame enhancement. It runs at **39 FPS on a GTX 4060** at N64's native 320x240 resolution with TensorRT, well above the 24 FPS playability threshold.
 
-## Example Outputs
-
-All examples below are from Super Mario 64 (320x240), processed in a single diffusion step.
-
-| Original | Enhanced (t=35) |
-|----------|----------------|
-| ![Original](examples/original.jpg) | ![Enhanced](examples/enhance.png) |
-
-| Ghibli Style | Synthwave |
-|-------------|-----------|
-| ![Ghibli](examples/ghibli.png) | ![Synthwave](examples/synthwave.png) |
-
-| Watercolor | Oil Painting |
-|-----------|-------------|
-| ![Watercolor](examples/watercolor.png) | ![Oil Painting](examples/oil_painting.png) |
-
 ## Architecture
 
 ```
@@ -233,27 +217,28 @@ ControlNet provides structural conditioning so the diffusion model can apply str
 ## Project Structure
 
 ```
-n64-dlss/
-├── n64_dlss_live.py          # Main application
-├── ui_utils.py               # ToolTip, set_widget_state, TOOLTIPS
-├── temporal_blend.py          # Flow-guided temporal blending + occlusion
-├── noise_warping.py           # Flow-warped noise for coherent denoising
-├── sm64_state_reader.py       # SM64 game state reader (camera, motion vectors)
-├── depth_estimator.py         # MiDaS depth estimation wrapper
-├── run.bat                    # Windows launcher
+n64_frame_gen/
+├── n64_dlss_live.py           # Main application
+├── ui_utils.py                # ToolTip, set_widget_state, TOOLTIPS
+├── temporal_blend.py           # Flow-guided temporal blending + occlusion
+├── noise_warping.py            # Flow-warped noise for coherent denoising
+├── sm64_state_reader.py        # SM64 game state reader (camera, motion vectors)
+├── depth_estimator.py          # MiDaS depth estimation wrapper
+├── run.bat                     # Windows launcher
 ├── n64Emulator/
-│   ├── n64_frontend.py       # Libretro frontend (ctypes + pygame + OpenGL)
-│   └── cores/                # Place libretro core DLLs here
-├── examples/                 # Example output images
-├── benchmark_streamdiffusion.py
-├── benchmark_optimized.py
-├── benchmark_tensorrt.py
-├── benchmark_results.json
-├── test_cartoon.py           # Style transfer experiments
-├── scratchpad.md             # Development notes
-├── research_summary.md       # Model research notes
-├── research_real_time_frame_generation.md
-└── research_report.html      # Full research report
+│   ├── n64_frontend.py        # Libretro frontend (ctypes + pygame + OpenGL)
+│   └── cores/                 # Place libretro core DLLs here
+├── benchmarks/
+│   ├── benchmark_streamdiffusion.py
+│   ├── benchmark_optimized.py
+│   ├── benchmark_tensorrt.py
+│   ├── benchmark_results.json
+│   └── test_cartoon.py        # Style transfer experiments
+└── docs/
+    ├── scratchpad.md           # Development notes
+    ├── research_summary.md
+    ├── research_real_time_frame_generation.md
+    └── research_report.html
 ```
 
 ## Future Work
