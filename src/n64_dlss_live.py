@@ -6,6 +6,7 @@ Usage:  python n64_dlss_live.py
 Controls:
     F2          Toggle diffusion on/off
     F3          Toggle training data capture
+    F4          Toggle auto-capture (bot plays + warps levels + captures)
     ESC         Quit
     Arrow Keys  D-Pad
     WASD        Analog Stick
@@ -27,6 +28,7 @@ import tkinter as tk
 from tkinter import ttk
 import cv2
 from ui_utils import ToolTip, set_widget_state, TOOLTIPS
+from auto_capture import AutoCapture
 
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPT_DIR = os.path.dirname(SRC_DIR)  # repo root
@@ -1190,7 +1192,10 @@ def main():
     emu_t0 = time.time()
     emu_fps = 0.0
 
-    print("\nRunning! F2 = Toggle diffusion | F3 = Toggle capture | ESC = Quit")
+    # ---- Auto-capture (automated input + level warping) ----
+    auto_capture = AutoCapture(frontend, processor)
+
+    print("\nRunning! F2 = Toggle diffusion | F3 = Toggle capture | F4 = Auto-capture | ESC = Quit")
 
     while running:
         # -- tkinter pump --
@@ -1215,6 +1220,9 @@ def main():
                     running = False
                 elif event.key == pygame.K_F1:
                     frontend.core.retro_reset()
+                elif event.key == pygame.K_F4:
+                    auto_capture.toggle()
+                    capture_var.set(processor.capture_enabled)
                 elif event.key == pygame.K_F3:
                     processor.capture_enabled = not processor.capture_enabled
                     capture_var.set(processor.capture_enabled)
@@ -1251,6 +1259,9 @@ def main():
                 raw_canvas.configure(image=raw_win._photo)
             except tk.TclError:
                 pass  # window closed
+
+        # -- Auto-capture tick (input injection + level warping) --
+        auto_capture.tick()
 
         # -- Training data capture --
         if (processor.capture_enabled and
