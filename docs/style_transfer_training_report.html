@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N64 Frame Gen — Style Transfer Training Research</title>
+    <style>
+        :root {
+            --bg: #0a0e17;
+            --surface: #131a2b;
+            --surface2: #1a2340;
+            --accent: #00e5ff;
+            --accent2: #7c4dff;
+            --accent3: #00e676;
+            --warning: #ffab00;
+            --danger: #ff5252;
+            --text: #e0e6f0;
+            --text-muted: #8892a8;
+            --border: #2a3555;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+        }
+        .container { max-width: 1100px; margin: 0 auto; padding: 40px 24px; }
+        h1 {
+            font-size: 2.2em;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        .subtitle { color: var(--text-muted); font-size: 1.1em; margin-bottom: 40px; }
+        h2 {
+            color: var(--accent);
+            font-size: 1.5em;
+            margin: 48px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--border);
+        }
+        h3 { color: var(--accent2); margin: 28px 0 12px; font-size: 1.15em; }
+        p, li { margin-bottom: 10px; }
+        ul, ol { padding-left: 24px; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 24px;
+            font-size: 0.92em;
+        }
+        th, td {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+        th { background: var(--surface2); color: var(--accent); font-weight: 600; }
+        td { background: var(--surface); }
+        tr:hover td { background: var(--surface2); }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+        }
+        .card.highlight { border-color: var(--accent); }
+        .card.recommend { border-color: var(--accent3); background: linear-gradient(135deg, rgba(0,230,118,0.05), transparent); }
+        .card.warn { border-color: var(--warning); }
+        .tag {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            margin-right: 6px;
+        }
+        .tag.fast { background: rgba(0,230,118,0.15); color: var(--accent3); }
+        .tag.medium { background: rgba(255,171,0,0.15); color: var(--warning); }
+        .tag.slow { background: rgba(255,82,82,0.15); color: var(--danger); }
+        .tag.cheap { background: rgba(0,229,255,0.15); color: var(--accent); }
+        .tag.best { background: rgba(124,77,255,0.15); color: var(--accent2); }
+        code {
+            background: var(--surface2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            font-family: 'Cascadia Code', 'Consolas', monospace;
+            font-size: 0.88em;
+            line-height: 1.5;
+            margin: 12px 0 20px;
+        }
+        .pipeline {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 16px 0;
+            font-size: 0.95em;
+        }
+        .pipeline .step {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 16px;
+            text-align: center;
+        }
+        .pipeline .arrow { color: var(--accent); font-size: 1.3em; }
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        @media (max-width: 700px) { .comparison { grid-template-columns: 1fr; } }
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .metric .label { color: var(--text-muted); }
+        .metric .value { font-weight: 600; }
+        .tldr {
+            background: linear-gradient(135deg, rgba(0,229,255,0.08), rgba(124,77,255,0.08));
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 24px;
+            margin: 24px 0;
+        }
+        .tldr h3 { color: var(--accent); margin-top: 0; }
+        .phase-timeline {
+            position: relative;
+            padding-left: 30px;
+            margin: 20px 0;
+        }
+        .phase-timeline::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border);
+        }
+        .phase {
+            position: relative;
+            margin-bottom: 24px;
+        }
+        .phase::before {
+            content: '';
+            position: absolute;
+            left: -24px;
+            top: 8px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+        .phase.p2::before { background: var(--accent2); }
+        .phase.p3::before { background: var(--accent3); }
+        .phase.p4::before { background: var(--warning); }
+    </style>
+</head>
+<body>
+<div class="container">
+
+<h1>N64 Frame Generation: Style Transfer Training Guide</h1>
+<p class="subtitle">How to train a model that transforms N64 frames into Ghibli, realistic, watercolor, and other styles — using depth + normals from the emulator for structural preservation.</p>
+
+<div class="tldr">
+    <h3>TL;DR</h3>
+    <p><strong>The goal:</strong> Replace our current SD-Turbo pipeline with a model specifically trained to transform N64 frames into various art styles, using depth and normals from the emulator so it preserves scene geometry perfectly.</p>
+    <p><strong>The approach:</strong> Use a large model (SDXL) offline to generate 50K styled training targets, then train a small fast model to replicate those outputs given the N64 frame + G-buffer data.</p>
+    <p><strong>Can you train on your GTX 4060?</strong> Yes — a feedforward style network trains in <strong>6-12 hours per style</strong>. A GAN takes <strong>3-5 days</strong>. Both run overnight while you're away.</p>
+    <p><strong>Or use cloud?</strong> A100 on Vast.ai costs ~$0.50/hr. Total training: <strong>$5-30</strong> depending on approach.</p>
+    <p><strong>Result:</strong> 60-500 FPS inference (vs 39 FPS now), using &lt;1GB VRAM (vs 4GB now), with better structural preservation thanks to G-buffer conditioning.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>1. The Core Idea: Distillation</h2>
+
+<p>The key insight is that we don't need a 860M parameter diffusion model running at inference time. Instead:</p>
+
+<div class="pipeline">
+    <div class="step">SDXL + ControlNet<br><small>(offline, slow, high quality)</small></div>
+    <div class="arrow">→</div>
+    <div class="step">50K styled frames<br><small>(training targets)</small></div>
+    <div class="arrow">→</div>
+    <div class="step">Train small model<br><small>(2-50M params)</small></div>
+    <div class="arrow">→</div>
+    <div class="step">Real-time inference<br><small>(60-500 FPS)</small></div>
+</div>
+
+<p>This is how the best results are achieved in practice: large models generate gold-standard outputs, then a small model learns to replicate them. The small model can also accept <strong>additional inputs</strong> (depth, normals) that the large model didn't have — giving it structural advantages at a fraction of the cost.</p>
+
+<!-- ============================================================ -->
+<h2>2. Three Architecture Options</h2>
+
+<p>Each option trades speed for quality. All accept 7-channel input: RGB (3) + depth (1) + normals (3).</p>
+
+<table>
+    <tr>
+        <th>Option</th>
+        <th>Architecture</th>
+        <th>Params</th>
+        <th>Inference (320×240)</th>
+        <th>Training (GTX 4060)</th>
+        <th>Training (A100 cloud)</th>
+        <th>Quality</th>
+    </tr>
+    <tr>
+        <td><strong>A: Feedforward Net</strong><br><span class="tag fast">Fastest</span><span class="tag cheap">Cheapest</span></td>
+        <td>Johnson et al. encoder-residual-decoder</td>
+        <td>~2M</td>
+        <td>2-5ms<br><strong>200-500 FPS</strong></td>
+        <td><strong>6-12 hrs</strong> per style</td>
+        <td>1-2 hrs / $2-4</td>
+        <td>Good</td>
+    </tr>
+    <tr>
+        <td><strong>B: Compact GAN</strong><br><span class="tag best">Best Tradeoff</span></td>
+        <td>Pix2Pix U-Net + PatchGAN discriminator</td>
+        <td>~20-50M</td>
+        <td>5-15ms<br><strong>60-200 FPS</strong></td>
+        <td><strong>3-5 days</strong></td>
+        <td>4-8 hrs / $8-16</td>
+        <td>Very Good</td>
+    </tr>
+    <tr>
+        <td><strong>C: Fine-tuned Diffusion</strong><br><span class="tag medium">Slowest</span></td>
+        <td>SD-Turbo UNet, LoRA, expanded channels (4→8)</td>
+        <td>~860M (4M trainable)</td>
+        <td>20-30ms<br><strong>30-50 FPS</strong></td>
+        <td><strong>2-5 days</strong></td>
+        <td>8-16 hrs / $16-32</td>
+        <td>Excellent</td>
+    </tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>3. Option A: Feedforward Style Network (Recommended Start)</h2>
+
+<div class="card recommend">
+    <h3>Why Start Here</h3>
+    <p>This is the <strong>fastest to train, fastest at inference, and simplest to implement</strong>. You train one small model per art style. Each model is ~8MB and runs at 200+ FPS. You can train all styles overnight on your GTX 4060 — no cloud needed.</p>
+</div>
+
+<h3>Architecture</h3>
+<p>Based on <a href="https://arxiv.org/abs/1603.08155" style="color:var(--accent)">Johnson et al. "Perceptual Losses for Real-Time Style Transfer" (2016)</a>, modified for 7-channel input:</p>
+
+<pre>
+Input (7ch: RGB + Depth + Normals, 320×240)
+  ↓
+Conv 9×9, 32 filters, ReLU, InstanceNorm
+Conv 3×3 stride 2, 64 filters (downsample)
+Conv 3×3 stride 2, 128 filters (downsample)
+  ↓
+5× Residual Blocks (128 filters each)
+  ↓
+ConvTranspose 3×3 stride 2, 64 filters (upsample)
+ConvTranspose 3×3 stride 2, 32 filters (upsample)
+Conv 9×9, 3 filters, Tanh
+  ↓
+Output (3ch RGB, 320×240)
+</pre>
+
+<p><strong>Total parameters:</strong> ~1.7M. <strong>Model size:</strong> ~7MB.</p>
+
+<h3>Loss Function</h3>
+<ul>
+    <li><strong>Perceptual loss</strong> (VGG-16 features at relu2_2 and relu4_3) — makes output look "natural"</li>
+    <li><strong>Style loss</strong> (Gram matrices of VGG features from a reference style image) — drives artistic style</li>
+    <li><strong>Pixel L1 loss</strong> against the SDXL-generated target — anchors the output</li>
+    <li><strong>Temporal loss</strong> (L1 between warped previous output and current output) — optional, for video consistency</li>
+</ul>
+
+<h3>How Depth + Normals Help</h3>
+<p>The 7-channel input gives the network explicit 3D structure. Without it, the network only sees RGB pixels and has to <em>guess</em> where edges, surfaces, and objects are. With depth + normals:</p>
+<ul>
+    <li>The network knows which pixels are foreground vs background → better edge preservation</li>
+    <li>Normals tell it surface orientation → better shading and style application</li>
+    <li>Depth discontinuities signal object boundaries → cleaner object silhouettes</li>
+</ul>
+
+<h3>Training on GTX 4060</h3>
+<div class="card">
+    <div class="metric"><span class="label">Batch size</span><span class="value">16</span></div>
+    <div class="metric"><span class="label">Resolution</span><span class="value">320×240</span></div>
+    <div class="metric"><span class="label">VRAM usage</span><span class="value">~2-3 GB</span></div>
+    <div class="metric"><span class="label">Steps per second</span><span class="value">~15-25</span></div>
+    <div class="metric"><span class="label">Training steps</span><span class="value">~50K (50 epochs × 1K batches)</span></div>
+    <div class="metric"><span class="label">Total time per style</span><span class="value"><strong>~6-12 hours</strong></span></div>
+    <div class="metric"><span class="label">Multiple styles</span><span class="value">Train overnight, one per night</span></div>
+</div>
+
+<!-- ============================================================ -->
+<h2>4. Option B: Compact GAN</h2>
+
+<div class="card highlight">
+    <h3>When to Use This</h3>
+    <p>If Option A's quality isn't sharp enough (feedforward nets can be slightly soft/blurry), upgrade to a GAN. The adversarial discriminator produces <strong>crisp, detailed outputs</strong> with better textures. Think of it as "Option A but with a quality boost at the cost of longer training."</p>
+</div>
+
+<h3>Architecture</h3>
+<p>Based on <a href="https://arxiv.org/abs/1711.11585" style="color:var(--accent)">Pix2PixHD</a> / <a href="https://arxiv.org/abs/2603.10604" style="color:var(--accent)">HyPER-GAN</a>, adapted for multi-channel input:</p>
+
+<pre>
+Generator: U-Net encoder-decoder
+  Input: 7 channels (RGB + depth + normals)
+  Encoder: 4 downsampling blocks (64→128→256→512)
+  Bottleneck: 6 residual blocks
+  Decoder: 4 upsampling blocks with skip connections
+  Output: 3 channels (RGB)
+  Params: ~20-50M
+
+Discriminator: Multi-scale PatchGAN
+  3 discriminators at 1x, 0.5x, 0.25x scale
+  Each: 4 conv layers → real/fake score per patch
+  Params: ~5M total
+</pre>
+
+<h3>Loss Function</h3>
+<ul>
+    <li><strong>Adversarial loss</strong> (hinge or LSGAN) — drives sharpness and realism</li>
+    <li><strong>L1 pixel loss</strong> against SDXL target — structural fidelity (weight: 10-100)</li>
+    <li><strong>VGG perceptual loss</strong> — naturalness (weight: 1-10)</li>
+    <li><strong>LPIPS loss</strong> — perceptual similarity (optional, weight: 1)</li>
+    <li><strong>Feature matching loss</strong> — match discriminator intermediate features (stabilizes training)</li>
+</ul>
+
+<h3>Training on GTX 4060</h3>
+<div class="card">
+    <div class="metric"><span class="label">Batch size</span><span class="value">4-8</span></div>
+    <div class="metric"><span class="label">Resolution</span><span class="value">320×240</span></div>
+    <div class="metric"><span class="label">VRAM usage</span><span class="value">~4-6 GB</span></div>
+    <div class="metric"><span class="label">Steps per second</span><span class="value">~5-10</span></div>
+    <div class="metric"><span class="label">Training steps</span><span class="value">~200K-500K</span></div>
+    <div class="metric"><span class="label">Total time</span><span class="value"><strong>3-5 days</strong></span></div>
+</div>
+
+<h3>Frameworks</h3>
+<ul>
+    <li><strong><a href="https://github.com/GaParmar/img2img-turbo" style="color:var(--accent)">pix2pix-turbo</a></strong> — best starting codebase; already implements paired image translation distilled from SD-Turbo</li>
+    <li><strong><a href="https://github.com/XPixelGroup/BasicSR" style="color:var(--accent)">BasicSR</a></strong> — general training framework used by NTIRE competition winners</li>
+    <li><strong><a href="https://github.com/stefanos50/HyPER-GAN" style="color:var(--accent)">HyPER-GAN</a></strong> — compact U-Net GAN specifically for game frames (12ms at 720p)</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>5. Option C: Fine-Tuned Diffusion</h2>
+
+<div class="card warn">
+    <h3>When to Use This</h3>
+    <p>If you want <strong>prompt-controllable artistic generation</strong> — change the style at runtime by changing the text prompt, not by swapping models. This is the most flexible but slowest option. Similar speed to your current pipeline, but with much better structural preservation from G-buffer inputs.</p>
+</div>
+
+<h3>How It Works</h3>
+<p>Expand SD-Turbo's UNet from 4 input channels (latent) to 8 (latent + depth + normals). Zero-initialize the new channels so it starts from pretrained behavior, then LoRA fine-tune.</p>
+
+<pre>
+# Expand UNet input channels
+unet = UNet2DConditionModel.from_pretrained("stabilityai/sd-turbo", subfolder="unet")
+old_conv = unet.conv_in  # shape: [320, 4, 3, 3]
+
+new_conv = torch.nn.Conv2d(8, 320, kernel_size=3, padding=1)
+new_conv.weight.data[:, :4] = old_conv.weight.data  # preserve pretrained weights
+new_conv.weight.data[:, 4:] = 0  # zero-init new channels
+new_conv.bias.data = old_conv.bias.data
+unet.conv_in = new_conv
+
+# Apply LoRA to attention layers
+from peft import LoraConfig, get_peft_model
+lora_config = LoraConfig(r=32, target_modules=["to_q", "to_k", "to_v", "to_out.0"])
+unet = get_peft_model(unet, lora_config)
+# conv_in is fully trainable (not LoRA) — it needs to learn new channel semantics
+</pre>
+
+<h3>Training on GTX 4060</h3>
+<div class="card">
+    <div class="metric"><span class="label">LoRA rank</span><span class="value">32 (8-16M trainable params)</span></div>
+    <div class="metric"><span class="label">Batch size</span><span class="value">1 (grad accumulation 4)</span></div>
+    <div class="metric"><span class="label">Resolution</span><span class="value">512×512 (latent 64×64)</span></div>
+    <div class="metric"><span class="label">VRAM usage</span><span class="value">~7-8 GB (with gradient checkpointing)</span></div>
+    <div class="metric"><span class="label">Steps per second</span><span class="value">~0.4-0.7</span></div>
+    <div class="metric"><span class="label">Training steps</span><span class="value">~30K-50K</span></div>
+    <div class="metric"><span class="label">Total time</span><span class="value"><strong>2-5 days</strong></span></div>
+</div>
+
+<!-- ============================================================ -->
+<h2>6. Training Data: Where Do Styled Targets Come From?</h2>
+
+<p>This is the critical question. For all three options, you need paired data: <strong>(N64 frame + depth + normals) → styled frame</strong>.</p>
+
+<h3>Step 1: Capture N64 Frames + G-Buffers</h3>
+<p>Instrument your emulator to auto-save during gameplay:</p>
+<ul>
+    <li><strong>RGB frame</strong> (320×240) — already captured by your frontend</li>
+    <li><strong>Depth buffer</strong> (320×240 float32) — already extracted from RDRAM</li>
+    <li><strong>Normals</strong> (320×240×3 float32) — compute from depth gradients (3 lines of code)</li>
+</ul>
+<p>Play through diverse content: multiple games, levels, lighting conditions, camera angles. Target: <strong>50K-100K frames</strong>.</p>
+
+<h3>Step 2: Generate Styled Targets with SDXL (Offline)</h3>
+
+<div class="comparison">
+    <div class="card">
+        <h3>On Your 4060 (SD 1.5 + ControlNet)</h3>
+        <div class="metric"><span class="label">Model</span><span class="value">SD 1.5 + ControlNet-Depth</span></div>
+        <div class="metric"><span class="label">Speed</span><span class="value">~2-3 sec/frame</span></div>
+        <div class="metric"><span class="label">50K frames</span><span class="value">~28-42 hours</span></div>
+        <div class="metric"><span class="label">Cost</span><span class="value">$0 (electricity)</span></div>
+        <div class="metric"><span class="label">Quality</span><span class="value">Good</span></div>
+    </div>
+    <div class="card">
+        <h3>On Cloud A100 (SDXL + ControlNet)</h3>
+        <div class="metric"><span class="label">Model</span><span class="value">SDXL + ControlNet-Depth</span></div>
+        <div class="metric"><span class="label">Speed</span><span class="value">~1 sec/frame</span></div>
+        <div class="metric"><span class="label">50K frames</span><span class="value">~14 hours</span></div>
+        <div class="metric"><span class="label">Cost</span><span class="value">~$28 per style</span></div>
+        <div class="metric"><span class="label">Quality</span><span class="value">Excellent</span></div>
+    </div>
+</div>
+
+<p>For each frame, generate targets using prompts like:</p>
+<ul>
+    <li><strong>Ghibli:</strong> "studio ghibli anime style, lush detailed background, soft lighting"</li>
+    <li><strong>Realistic:</strong> "photorealistic modern 3D game, unreal engine 5, ray traced lighting"</li>
+    <li><strong>Watercolor:</strong> "watercolor painting, soft edges, flowing colors, artistic"</li>
+</ul>
+<p>Use ControlNet-Depth with your extracted Z-buffer to preserve scene geometry in the styled output.</p>
+
+<h3>Alternative: Unpaired Training (No Target Generation)</h3>
+<p>If you don't want to generate paired targets, <strong>CycleGAN-Turbo</strong> or <strong>CUT</strong> can learn style transfer from two unpaired collections:</p>
+<ul>
+    <li>Set A: N64 screenshots (50K+)</li>
+    <li>Set B: Ghibli artwork / modern game screenshots / watercolor paintings (50K+)</li>
+</ul>
+<p>Quality is lower than paired training, but requires zero offline generation.</p>
+
+<!-- ============================================================ -->
+<h2>7. GTX 4060 vs Cloud: Full Cost Comparison</h2>
+
+<table>
+    <tr>
+        <th>Phase</th>
+        <th>GTX 4060 (8GB)</th>
+        <th>Cloud A100 40GB<br><small>Vast.ai ~$0.50/hr</small></th>
+        <th>Cloud A100 80GB<br><small>Lambda ~$2/hr</small></th>
+    </tr>
+    <tr>
+        <td><strong>Data capture</strong><br><small>50K frames + depth</small></td>
+        <td>2-3 days of gameplay<br>$0</td>
+        <td colspan="2" style="text-align:center">Same (must run locally with emulator)</td>
+    </tr>
+    <tr>
+        <td><strong>Target generation</strong><br><small>50K frames × 1 style</small></td>
+        <td>28-42 hrs (SD 1.5)<br>$0</td>
+        <td>~14 hrs<br><strong>$7</strong></td>
+        <td>~14 hrs<br><strong>$28</strong></td>
+    </tr>
+    <tr>
+        <td><strong>Train Option A</strong><br><small>Feedforward (per style)</small></td>
+        <td>6-12 hrs<br>$0</td>
+        <td>1-2 hrs<br><strong>$1</strong></td>
+        <td>1-2 hrs<br><strong>$3</strong></td>
+    </tr>
+    <tr>
+        <td><strong>Train Option B</strong><br><small>GAN</small></td>
+        <td>3-5 days<br>$0</td>
+        <td>4-8 hrs<br><strong>$4</strong></td>
+        <td>4-8 hrs<br><strong>$14</strong></td>
+    </tr>
+    <tr>
+        <td><strong>Train Option C</strong><br><small>LoRA diffusion</small></td>
+        <td>2-5 days<br>$0</td>
+        <td>8-16 hrs<br><strong>$8</strong></td>
+        <td>8-16 hrs<br><strong>$28</strong></td>
+    </tr>
+    <tr style="background: var(--surface2);">
+        <td><strong>Total (Option A, 3 styles)</strong></td>
+        <td><strong>5-7 days</strong><br>$0</td>
+        <td><strong>~18 hrs</strong><br><strong>$25</strong></td>
+        <td><strong>~18 hrs</strong><br><strong>$95</strong></td>
+    </tr>
+    <tr style="background: var(--surface2);">
+        <td><strong>Total (Option B, 1 style)</strong></td>
+        <td><strong>4-7 days</strong><br>$0</td>
+        <td><strong>~20 hrs</strong><br><strong>$11</strong></td>
+        <td><strong>~20 hrs</strong><br><strong>$42</strong></td>
+    </tr>
+</table>
+
+<p><strong>Other cloud options:</strong></p>
+<ul>
+    <li><strong>Vast.ai RTX 4090</strong>: ~$0.25/hr — cheapest option, slightly slower than A100</li>
+    <li><strong>RunPod H100</strong>: ~$2.00/hr — fastest option</li>
+    <li><strong>Google Colab Pro+</strong>: $50/month, A100 access with usage limits — good if you plan ongoing experiments</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>8. After Training: Expected Performance</h2>
+
+<div class="comparison">
+    <div class="card">
+        <h3>Current Pipeline (SD-Turbo)</h3>
+        <div class="metric"><span class="label">FPS</span><span class="value">39</span></div>
+        <div class="metric"><span class="label">VRAM</span><span class="value">~4 GB</span></div>
+        <div class="metric"><span class="label">Latency</span><span class="value">25.7ms</span></div>
+        <div class="metric"><span class="label">Style control</span><span class="value">Text prompt (runtime)</span></div>
+        <div class="metric"><span class="label">Structure preservation</span><span class="value">Poor (RGB only)</span></div>
+    </div>
+    <div class="card recommend">
+        <h3>Option A (Feedforward + TensorRT)</h3>
+        <div class="metric"><span class="label">FPS</span><span class="value" style="color:var(--accent3)">200-500</span></div>
+        <div class="metric"><span class="label">VRAM</span><span class="value" style="color:var(--accent3)">&lt;200 MB</span></div>
+        <div class="metric"><span class="label">Latency</span><span class="value">2-5ms</span></div>
+        <div class="metric"><span class="label">Style control</span><span class="value">Swap model per style</span></div>
+        <div class="metric"><span class="label">Structure preservation</span><span class="value" style="color:var(--accent3)">Excellent (depth + normals)</span></div>
+    </div>
+</div>
+<div class="comparison">
+    <div class="card highlight">
+        <h3>Option B (GAN + TensorRT)</h3>
+        <div class="metric"><span class="label">FPS</span><span class="value" style="color:var(--accent3)">60-200</span></div>
+        <div class="metric"><span class="label">VRAM</span><span class="value" style="color:var(--accent3)">&lt;500 MB</span></div>
+        <div class="metric"><span class="label">Latency</span><span class="value">5-15ms</span></div>
+        <div class="metric"><span class="label">Style control</span><span class="value">Swap model per style</span></div>
+        <div class="metric"><span class="label">Structure preservation</span><span class="value" style="color:var(--accent3)">Excellent (depth + normals)</span></div>
+    </div>
+    <div class="card">
+        <h3>Option C (LoRA Diffusion + TRT)</h3>
+        <div class="metric"><span class="label">FPS</span><span class="value">30-50</span></div>
+        <div class="metric"><span class="label">VRAM</span><span class="value">~4 GB</span></div>
+        <div class="metric"><span class="label">Latency</span><span class="value">20-30ms</span></div>
+        <div class="metric"><span class="label">Style control</span><span class="value">Prompt + LoRA swap</span></div>
+        <div class="metric"><span class="label">Structure preservation</span><span class="value" style="color:var(--accent3)">Excellent (depth + normals)</span></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>9. The Killer Advantage: Why G-Buffers Change Everything</h2>
+
+<div class="card">
+<p>Your current pipeline has the <strong>"dead zone" problem</strong>: low denoise strength preserves the scene but barely changes it; high denoise strength applies strong style but destroys the scene. There's a narrow sweet spot that limits quality.</p>
+<p>With depth + normals as explicit inputs, the model <strong>knows the 3D structure independently of the RGB pixels</strong>. This means:</p>
+<ul>
+    <li>The model can completely restyle the RGB pixels (strong artistic effect)</li>
+    <li>While perfectly preserving geometry (depth tells it where things are, normals tell it surface orientation)</li>
+    <li>No more trading style intensity vs scene preservation — you get both</li>
+</ul>
+<p>This is fundamentally why DLSS works so well: it has access to the scene structure separate from the pixel colors.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>10. Recommended Plan</h2>
+
+<div class="phase-timeline">
+    <div class="phase">
+        <h3>Phase 0: Compute Normals from Depth (30 minutes)</h3>
+        <p>Add 3 lines of code to compute screen-space normals from the Z-buffer you already extract. This gives you the normals channel for free — no emulator modifications needed.</p>
+<pre>dzdx = depth[:, 2:] - depth[:, :-2]  # horizontal gradient
+dzdy = depth[2:, :] - depth[:-2, :]  # vertical gradient
+normals = normalize(cross(vec3(2, 0, dzdx), vec3(0, 2, dzdy)))</pre>
+    </div>
+
+    <div class="phase p2">
+        <h3>Phase 1: Capture Training Data (2-3 days)</h3>
+        <p>Add auto-save to the emulator: every frame, save RGB + depth + normals to disk. Play through SM64, Zelda OoT, Mario Kart, etc. Aim for 50K diverse frames.</p>
+    </div>
+
+    <div class="phase p3">
+        <h3>Phase 2: Generate Style Targets (1-3 days)</h3>
+        <p>Batch-process captured frames through SD 1.5 + ControlNet-Depth locally (free, ~28 hrs for 50K) or SDXL on cloud ($28 for 50K). Generate targets for each desired style.</p>
+    </div>
+
+    <div class="phase p4">
+        <h3>Phase 3: Train the Model (overnight to 5 days)</h3>
+        <p>Start with <strong>Option A</strong> (feedforward, 6-12 hrs per style on your 4060). If quality isn't sufficient, upgrade to <strong>Option B</strong> (GAN, 3-5 days). Keep the existing SD-Turbo pipeline as a fallback for prompt-based creativity.</p>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>11. Key References</h2>
+
+<h3>Style Transfer & Image Translation</h3>
+<ul>
+    <li><a href="https://arxiv.org/abs/1603.08155" style="color:var(--accent)">Johnson et al. — Perceptual Losses for Real-Time Style Transfer (2016)</a> — feedforward style network</li>
+    <li><a href="https://arxiv.org/abs/1703.00848" style="color:var(--accent)">Huang & Belongie — AdaIN: Arbitrary Style Transfer in Real-Time (2017)</a> — real-time arbitrary styles</li>
+    <li><a href="https://arxiv.org/abs/1711.11585" style="color:var(--accent)">Wang et al. — Pix2PixHD (2018)</a> — high-res conditional GAN</li>
+    <li><a href="https://arxiv.org/abs/1903.07291" style="color:var(--accent)">Park et al. — SPADE/GauGAN (2019)</a> — spatially-adaptive normalization for layout-to-image</li>
+    <li><a href="https://arxiv.org/abs/2403.12036" style="color:var(--accent)">Parmar et al. — pix2pix-turbo / CycleGAN-Turbo (2024)</a> — one-step conditioned translation</li>
+</ul>
+
+<h3>Distillation & Fast Generation</h3>
+<ul>
+    <li><a href="https://arxiv.org/abs/2311.17042" style="color:var(--accent)">Sauer et al. — ADD / SD-Turbo (2023)</a> — adversarial diffusion distillation</li>
+    <li><a href="https://arxiv.org/abs/2405.14867" style="color:var(--accent)">Yin et al. — DMD2 (2024)</a> — distribution matching distillation, 1-step SDXL</li>
+    <li><a href="https://arxiv.org/abs/2402.13929" style="color:var(--accent)">Lin et al. — SDXL-Lightning (2024)</a> — progressive adversarial distillation</li>
+    <li><a href="https://arxiv.org/abs/2312.05239" style="color:var(--accent)">Nguyen et al. — SwiftBrush (2024)</a> — image-free knowledge distillation</li>
+</ul>
+
+<h3>Game-Specific AI Rendering</h3>
+<ul>
+    <li><a href="https://arxiv.org/abs/2603.10604" style="color:var(--accent)">HyPER-GAN (2026)</a> — compact GAN for game frame enhancement, 81 FPS at 720p</li>
+    <li><a href="https://arxiv.org/abs/2408.14837" style="color:var(--accent)">GameNGen (Google, 2024)</a> — diffusion as a game engine for DOOM</li>
+    <li><a href="https://github.com/GaParmar/img2img-turbo" style="color:var(--accent)">img2img-turbo (GitHub)</a> — best starting codebase for paired style transfer</li>
+    <li><a href="https://github.com/XPixelGroup/BasicSR" style="color:var(--accent)">BasicSR (GitHub)</a> — training framework for image restoration/translation</li>
+</ul>
+
+<h3>Multi-Channel Conditioning</h3>
+<ul>
+    <li><a href="https://arxiv.org/abs/2302.05543" style="color:var(--accent)">ControlNet (Zhang et al., 2023)</a> — structural conditioning for diffusion</li>
+    <li><a href="https://github.com/TencentARC/T2I-Adapter" style="color:var(--accent)">T2I-Adapter</a> — lightweight alternative (~77M params)</li>
+    <li><a href="https://arxiv.org/abs/2405.00666" style="color:var(--accent)">RGB-X (Adobe, SIGGRAPH 2024)</a> — fine-tuning SD for multi-channel intrinsic decomposition</li>
+    <li><a href="https://huggingface.co/docs/diffusers/training/adapt_a_model" style="color:var(--accent)">HuggingFace: Adapting Model Input Channels</a></li>
+</ul>
+
+</div>
+</body>
+</html>

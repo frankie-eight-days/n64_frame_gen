@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N64 Frame Gen v2 — Training Plan</title>
+    <style>
+        :root {
+            --bg: #0a0e17; --surface: #131a2b; --surface2: #1a2340;
+            --accent: #00e5ff; --accent2: #7c4dff; --accent3: #00e676;
+            --warning: #ffab00; --danger: #ff5252;
+            --text: #e0e6f0; --text-muted: #8892a8; --border: #2a3555;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+        .container { max-width: 960px; margin: 0 auto; padding: 40px 24px; }
+        h1 { font-size: 2em; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
+        .subtitle { color: var(--text-muted); font-size: 1.05em; margin-bottom: 40px; }
+        h2 { color: var(--accent); font-size: 1.4em; margin: 44px 0 16px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+        h3 { color: var(--accent2); margin: 24px 0 10px; font-size: 1.1em; }
+        p, li { margin-bottom: 10px; }
+        ul, ol { padding-left: 24px; }
+        table { width: 100%; border-collapse: collapse; margin: 16px 0 24px; font-size: 0.92em; }
+        th, td { padding: 10px 14px; border: 1px solid var(--border); text-align: left; }
+        th { background: var(--surface2); color: var(--accent); font-weight: 600; }
+        td { background: var(--surface); }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin: 20px 0; }
+        .card.green { border-color: var(--accent3); }
+        .card.blue { border-color: var(--accent); }
+        .card.purple { border-color: var(--accent2); }
+        .card.amber { border-color: var(--warning); }
+        .step-num { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; font-weight: 700; font-size: 1.1em; margin-right: 12px; flex-shrink: 0; }
+        .step-header { display: flex; align-items: center; margin-bottom: 12px; }
+        .step-header h3 { margin: 0; }
+        .s1 .step-num { background: rgba(0,229,255,0.2); color: var(--accent); }
+        .s2 .step-num { background: rgba(124,77,255,0.2); color: var(--accent2); }
+        .s3 .step-num { background: rgba(0,230,118,0.2); color: var(--accent3); }
+        .s4 .step-num { background: rgba(255,171,0,0.2); color: var(--warning); }
+        .s5 .step-num { background: rgba(255,82,82,0.2); color: var(--danger); }
+        .s6 .step-num { background: rgba(0,229,255,0.2); color: var(--accent); }
+        .s7 .step-num { background: rgba(124,77,255,0.2); color: var(--accent2); }
+        .meta { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0; font-size: 0.92em; }
+        .meta-item { background: var(--surface2); padding: 6px 14px; border-radius: 8px; }
+        .meta-label { color: var(--text-muted); }
+        .meta-value { font-weight: 600; }
+        code { background: var(--surface2); padding: 2px 6px; border-radius: 4px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.9em; }
+        pre { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.88em; line-height: 1.5; margin: 12px 0 20px; }
+        .budget-bar { height: 32px; background: var(--surface2); border-radius: 8px; overflow: hidden; margin: 8px 0 16px; display: flex; }
+        .budget-seg { display: flex; align-items: center; justify-content: center; font-size: 0.8em; font-weight: 600; color: #000; }
+        a { color: var(--accent); }
+        .verdict { background: linear-gradient(135deg, rgba(0,229,255,0.08), rgba(124,77,255,0.08)); border: 1px solid var(--accent); border-radius: 12px; padding: 24px; margin: 24px 0; }
+    </style>
+</head>
+<body>
+<div class="container">
+
+<h1>N64 Frame Gen v2 — Training Plan</h1>
+<p class="subtitle">Prompt-controllable style transfer with G-buffer conditioning. Budget: ~$100.</p>
+
+<!-- ============================================================ -->
+<h2>Which Base Model?</h2>
+
+<p>Before diving into steps, the big question: is SD-Turbo still the right choice, or should we switch?</p>
+
+<table>
+    <tr>
+        <th>Model</th>
+        <th>Base</th>
+        <th>Steps</th>
+        <th>Inference VRAM</th>
+        <th>LoRA Ecosystem</th>
+        <th>Pros</th>
+        <th>Cons</th>
+    </tr>
+    <tr>
+        <td><strong>SD-Turbo</strong></td>
+        <td>SD 2.1</td>
+        <td>1</td>
+        <td>~3 GB</td>
+        <td>Small (SD 2.x is less popular)</td>
+        <td>Already working in our pipeline. Fastest (1 step). Smallest VRAM.</td>
+        <td>SD 2.x ecosystem is tiny. Few community LoRAs. Quality ceiling is lower.</td>
+    </tr>
+    <tr>
+        <td><strong>SD 1.5 + LCM-LoRA</strong></td>
+        <td>SD 1.5</td>
+        <td>2-4</td>
+        <td>~3.5 GB</td>
+        <td>★★★★★ Massive</td>
+        <td>Huge ecosystem — thousands of community style LoRAs work instantly. Best fine-tuning docs. Most ControlNet models.</td>
+        <td>2-4 steps instead of 1 (slightly slower). Needs LCM-LoRA for speed.</td>
+    </tr>
+    <tr>
+        <td><strong>SDXL-Turbo</strong></td>
+        <td>SDXL</td>
+        <td>1-4</td>
+        <td>~6-7 GB</td>
+        <td>★★★★ Large</td>
+        <td>Best quality. Strong ecosystem.</td>
+        <td>Tight on 8GB GPUs. Other people with 8GB cards can't run it comfortably alongside the emulator.</td>
+    </tr>
+    <tr>
+        <td><strong>SDXL-Lightning</strong></td>
+        <td>SDXL</td>
+        <td>1-4</td>
+        <td>~6-7 GB</td>
+        <td>★★★★ Large</td>
+        <td>Higher quality than SDXL-Turbo at 2-4 steps.</td>
+        <td>Same VRAM problem as SDXL-Turbo.</td>
+    </tr>
+</table>
+
+<div class="verdict">
+    <h3>Recommendation: SD 1.5 + LCM-LoRA</h3>
+    <p><strong>Why switch from SD-Turbo:</strong></p>
+    <ul>
+        <li><strong>Ecosystem:</strong> SD 1.5 has thousands of community style LoRAs (Ghibli, anime, realistic, pixel art, etc.) that work out of the box. SD 2.x (what SD-Turbo is based on) has almost none.</li>
+        <li><strong>ControlNet:</strong> The best ControlNet models (depth, canny, normal) are all SD 1.5. Our G-buffer conditioning integrates naturally.</li>
+        <li><strong>Shareability:</strong> Anyone with a 6-8GB GPU can run SD 1.5. SDXL cuts out half the audience.</li>
+        <li><strong>Fine-tuning:</strong> SD 1.5 has the most documentation, tutorials, and tooling for LoRA training. HuggingFace, Kohya, every guide is SD 1.5 first.</li>
+        <li><strong>LCM-LoRA:</strong> Drops inference to 2-4 steps with minimal quality loss. Combined with StreamDiffusion + TensorRT, this should hit 25-40 FPS — comparable to SD-Turbo's 39 FPS.</li>
+    </ul>
+    <p><strong>Tradeoff:</strong> 2-4 steps instead of 1. Slightly slower. But the ecosystem advantage is enormous — users can drop in any community LoRA and it just works.</p>
+    <p><strong>SDXL is tempting</strong> but at 6-7GB inference VRAM, it leaves almost nothing for the emulator + display on an 8GB card. If you want this to be downloadable and usable by others, SD 1.5 is the right call.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>Budget Breakdown</h2>
+
+<div class="budget-bar">
+    <div class="budget-seg" style="width:10%; background: var(--accent);">Cloud</div>
+    <div class="budget-seg" style="width:30%; background: var(--accent2);">Targets</div>
+    <div class="budget-seg" style="width:25%; background: var(--accent3);">Training</div>
+    <div class="budget-seg" style="width:15%; background: var(--warning);">Iterate</div>
+    <div class="budget-seg" style="width:20%; background: var(--text-muted);">Buffer</div>
+</div>
+
+<table>
+    <tr><th>Item</th><th>GPU</th><th>Hours</th><th>Cost</th></tr>
+    <tr><td>Target generation (3 styles × 50K frames)</td><td>A100 80GB</td><td>~42 hrs</td><td><strong>$45</strong></td></tr>
+    <tr><td>Training (LoRA fine-tune)</td><td>A100 80GB</td><td>~12 hrs</td><td><strong>$25</strong></td></tr>
+    <tr><td>Iteration / experiments</td><td>A100 80GB</td><td>~8 hrs</td><td><strong>$15</strong></td></tr>
+    <tr><td>Buffer for mistakes / reruns</td><td>—</td><td>—</td><td><strong>$15</strong></td></tr>
+    <tr style="font-weight:700; background: var(--surface2);">
+        <td>Total</td><td></td><td>~62 hrs</td><td><strong>~$100</strong></td>
+    </tr>
+</table>
+<p><small>Priced at Vast.ai A100 80GB rates (~$1.00-1.50/hr) or Lambda H100 ($2.00/hr for faster runs). Actual costs may be lower — Vast.ai RTX 4090 at $0.25/hr would cut target generation costs by 60%.</small></p>
+
+<!-- ============================================================ -->
+<h2>The Steps</h2>
+
+<!-- STEP 1 -->
+<div class="card s1">
+    <div class="step-header"><span class="step-num">1</span><h3>Compute Normals from Z-Buffer</h3></div>
+    <p>Add code to derive screen-space normals from the depth buffer we already extract. Cross-product of depth gradients gives a per-pixel normal map.</p>
+    <div class="meta">
+        <div class="meta-item"><span class="meta-label">Time:</span> <span class="meta-value">30 minutes</span></div>
+        <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">$0</span></div>
+        <div class="meta-item"><span class="meta-label">Where:</span> <span class="meta-value">Local</span></div>
+    </div>
+    <p>Three lines of numpy. We already have the Z-buffer — this is free data.</p>
+<pre>dzdx = z14[:, 2:] - z14[:, :-2]
+dzdy = z14[2:, :] - z14[:-2, :]
+normals = np.stack([-dzdx, -dzdy, np.ones_like(dzdx) * 2], axis=-1)
+normals = normals / np.linalg.norm(normals, axis=-1, keepdims=True)</pre>
+</div>
+
+<!-- STEP 2 -->
+<div class="card s2">
+    <div class="step-header"><span class="step-num">2</span><h3>Build Data Capture Mode</h3></div>
+    <p>Add an auto-save mode to the emulator: every Nth frame, write RGB + depth + normals to disk. Then play through diverse game content.</p>
+    <div class="meta">
+        <div class="meta-item"><span class="meta-label">Time:</span> <span class="meta-value">1-2 hrs coding + 2-3 days gameplay</span></div>
+        <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">$0</span></div>
+        <div class="meta-item"><span class="meta-label">Where:</span> <span class="meta-value">Local</span></div>
+    </div>
+    <p><strong>Target:</strong> ~50,000 frames from diverse scenes.</p>
+    <p><strong>Games:</strong> SM64 (all levels), Zelda OoT (indoor/outdoor/dungeons/day/night), Mario Kart 64 (varied tracks), Banjo-Kazooie, etc.</p>
+    <p><strong>Format:</strong> PNG for RGB, NPZ for depth + normals. ~1-2 KB per frame = ~50-100 GB total.</p>
+    <p><strong>Tip:</strong> Save every 3rd-5th frame to avoid near-duplicate consecutive frames.</p>
+</div>
+
+<!-- STEP 3 -->
+<div class="card s3">
+    <div class="step-header"><span class="step-num">3</span><h3>Generate Styled Training Targets (Cloud)</h3></div>
+    <p>Batch-process every captured frame through SDXL + ControlNet-Depth on a cloud A100 to produce "gold standard" styled outputs for each desired style.</p>
+    <div class="meta">
+        <div class="meta-item"><span class="meta-label">Time:</span> <span class="meta-value">~14 hrs per style</span></div>
+        <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">~$15 per style (Vast.ai A100)</span></div>
+        <div class="meta-item"><span class="meta-label">Where:</span> <span class="meta-value">Cloud — A100 80GB</span></div>
+    </div>
+    <p><strong>Pipeline per frame:</strong></p>
+    <ol>
+        <li>Load captured N64 RGB frame</li>
+        <li>Load corresponding depth map → feed to ControlNet-Depth</li>
+        <li>Run SDXL at 30-50 steps, cfg 7.5, with style prompt</li>
+        <li>Save output as training target</li>
+    </ol>
+    <p><strong>Styles to generate (3 styles = ~$45):</strong></p>
+    <ul>
+        <li>"studio ghibli anime style, lush detailed, soft lighting, beautiful background"</li>
+        <li>"photorealistic modern 3D game, unreal engine 5, ray traced, high detail"</li>
+        <li>"watercolor painting, soft edges, flowing colors, artistic, beautiful"</li>
+    </ul>
+    <p><strong>Why ControlNet-Depth matters:</strong> It forces SDXL to preserve the scene geometry while restyling. Without it, SDXL would hallucinate different layouts. With it, every styled target has the exact same spatial structure as the N64 original — perfect paired training data.</p>
+</div>
+
+<!-- STEP 4 -->
+<div class="card s4">
+    <div class="step-header"><span class="step-num">4</span><h3>Set Up Training Pipeline</h3></div>
+    <p>Write the training code. Expand SD 1.5's UNet input channels from 4→8, configure LoRA, build the dataloader.</p>
+    <div class="meta">
+        <div class="meta-item"><span class="meta-label">Time:</span> <span class="meta-value">1-2 days</span></div>
+        <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">$0</span></div>
+        <div class="meta-item"><span class="meta-label">Where:</span> <span class="meta-value">Local (code only)</span></div>
+    </div>
+    <p><strong>Framework:</strong> HuggingFace <code>diffusers</code> + <code>peft</code> (LoRA) + <code>accelerate</code> (mixed precision)</p>
+    <p><strong>Key components:</strong></p>
+    <ul>
+        <li>Expand <code>conv_in</code> from 4→8 channels, zero-init new weights</li>
+        <li>LoRA rank 32 on all attention Q/K/V/out projections</li>
+        <li>Dataloader: loads (N64 frame, depth, normals, style prompt, SDXL target) tuples</li>
+        <li>VAE encodes both input frame and target to latent space</li>
+        <li>Depth + normals resized to latent resolution (40×30) and concatenated</li>
+        <li>Standard diffusion noise-prediction loss</li>
+        <li>Apply LCM-LoRA for 2-4 step inference after training</li>
+    </ul>
+</div>
+
+<!-- STEP 5 -->
+<div class="card s5">
+    <div class="step-header"><span class="step-num">5</span><h3>Train on Cloud</h3></div>
+    <p>Upload data to cloud GPU, launch training, wait.</p>
+    <div class="meta">
+        <div class="meta-item"><span class="meta-label">Time:</span> <span class="meta-value">8-16 hours</span></div>
+        <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">~$16-25</span></div>
+        <div class="meta-item"><span class="meta-label">Where:</span> <span class="meta-value">Cloud — A100 80GB or H100</span></div>
+    </div>
+    <p><strong>Training config:</strong></p>
+    <ul>
+        <li>LoRA rank 32, ~8-16M trainable parameters</li>
+        <li>Batch size 4-8 on A100 (much more room than 4060)</li>
+        <li>Mixed precision (bf16 on A100)</li>
+        <li>30K-50K training steps</li>
+        <li>Learning rate: 1e-4 for conv_in, 1e-5 for LoRA layers</li>
+    </ul>
+    <p><strong>On A100 80GB:</strong> ~2-4 steps/second with batch 8 → 50K steps in ~4-7 hours. Add overhead for setup/data transfer → ~8-16 hours total rental time.</p>
+</div>
+
+<!-- STEP 6 -->
+<div class="card s6">
+    <div class="step-header"><span class="step-num">6</span><h3>Export + Optimize</h3></div>
+    <p>Convert trained model to TensorRT for real-time inference on your GTX 4060.</p>
+    <div class="meta">
+        <div class="meta-item"><span class="meta-label">Time:</span> <span class="meta-value">1-2 days</span></div>
+        <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">$0</span></div>
+        <div class="meta-item"><span class="meta-label">Where:</span> <span class="meta-value">Local</span></div>
+    </div>
+    <ul>
+        <li>Merge LoRA weights into base model</li>
+        <li>Apply LCM-LoRA for 2-4 step inference</li>
+        <li>Export modified UNet to ONNX → TensorRT FP16</li>
+        <li>Integrate into StreamDiffusion pipeline</li>
+        <li>Modify <code>process_loop()</code> to feed depth + normals alongside RGB</li>
+    </ul>
+    <p><strong>Expected result:</strong> 25-40 FPS with prompt-controllable style transfer + perfect structural preservation.</p>
+</div>
+
+<!-- STEP 7 -->
+<div class="card s7">
+    <div class="step-header"><span class="step-num">7</span><h3>Test + Iterate</h3></div>
+    <p>Try prompts, evaluate quality, refine if needed.</p>
+    <div class="meta">
+        <div class="meta-item"><span class="meta-label">Time:</span> <span class="meta-value">Ongoing</span></div>
+        <div class="meta-item"><span class="meta-label">Cost:</span> <span class="meta-value">~$15 budget for reruns</span></div>
+        <div class="meta-item"><span class="meta-label">Where:</span> <span class="meta-value">Local + Cloud as needed</span></div>
+    </div>
+    <ul>
+        <li>If a specific style needs improvement → generate more targeted training data for that style, retrain (shorter run since you're refining)</li>
+        <li>Community LoRAs: test if existing SD 1.5 style LoRAs compose well with the G-buffer-trained LoRA</li>
+        <li>Tune LCM step count (2 vs 4) for speed/quality tradeoff</li>
+        <li>Consider publishing the trained LoRA + modified conv_in weights on HuggingFace for others to use</li>
+    </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2>Timeline</h2>
+
+<table>
+    <tr><th>Week</th><th>What</th><th>Blocking?</th></tr>
+    <tr><td>Week 1</td><td>Steps 1-2: Normals + data capture. Play games, collect 50K frames.</td><td>No — just gameplay</td></tr>
+    <tr><td>Week 2</td><td>Steps 3-4: Upload to cloud, generate targets. Write training code locally in parallel.</td><td>Cloud job runs unattended</td></tr>
+    <tr><td>Week 3</td><td>Step 5: Train on cloud (8-16 hrs). Step 6: Export + integrate.</td><td>Cloud job runs unattended</td></tr>
+    <tr><td>Week 4</td><td>Step 7: Test, iterate, polish.</td><td>No</td></tr>
+</table>
+
+<p>Most of this is unattended — cloud jobs running while you do other things. Active coding time is roughly 3-5 days spread across the month.</p>
+
+<!-- ============================================================ -->
+<h2>What You End Up With</h2>
+
+<div class="card green">
+    <h3>The Final Product</h3>
+    <ul>
+        <li>Type any prompt → N64 game renders in that style in real time</li>
+        <li>25-40 FPS on a GTX 4060 8GB</li>
+        <li>Perfect structural preservation (depth + normals conditioning)</li>
+        <li>Compatible with the entire SD 1.5 LoRA ecosystem — thousands of community styles</li>
+        <li>Downloadable by anyone with a 6-8GB GPU</li>
+        <li>Training data + weights publishable on HuggingFace</li>
+    </ul>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,1908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>N64 DLSS - CNN Super-Resolution Training Research Report</title>
+    <style>
+        :root {
+            --bg: #0a0e17;
+            --surface: #131a2b;
+            --surface2: #1a2340;
+            --accent: #00e5ff;
+            --accent2: #7c4dff;
+            --accent3: #00e676;
+            --warning: #ffab00;
+            --danger: #ff5252;
+            --text: #e0e6f0;
+            --text-muted: #8892a8;
+            --border: #2a3555;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #0a0e17 0%, #1a1040 40%, #0d2137 70%, #0a0e17 100%);
+            padding: 80px 40px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background:
+                radial-gradient(circle at 20% 50%, rgba(124, 77, 255, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 50%, rgba(0, 229, 255, 0.1) 0%, transparent 50%);
+        }
+
+        .hero h1 {
+            font-size: 3.2em;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+            position: relative;
+        }
+
+        .hero .subtitle {
+            font-size: 1.3em;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .hero .badge {
+            display: inline-block;
+            background: rgba(0, 229, 255, 0.15);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            color: var(--accent);
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin-top: 20px;
+            position: relative;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        h2 {
+            font-size: 2em;
+            font-weight: 700;
+            margin: 60px 0 24px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--border);
+            color: var(--accent);
+        }
+
+        h3 {
+            font-size: 1.4em;
+            font-weight: 600;
+            margin: 32px 0 16px;
+            color: var(--text);
+        }
+
+        h4 {
+            font-size: 1.1em;
+            font-weight: 600;
+            margin: 20px 0 10px;
+            color: var(--accent2);
+        }
+
+        p { margin-bottom: 14px; }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.2s;
+        }
+        a:hover { border-bottom-color: var(--accent); }
+
+        .exec-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+
+        .exec-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+
+        .exec-card:hover {
+            transform: translateY(-2px);
+            border-color: var(--accent);
+        }
+
+        .exec-card .label {
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .exec-card .value {
+            font-size: 2em;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent), var(--accent3));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .exec-card .detail {
+            font-size: 0.9em;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        .model-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px;
+            margin: 20px 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .model-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 4px;
+            height: 100%;
+        }
+
+        .model-card.green::before { background: var(--accent3); }
+        .model-card.blue::before { background: var(--accent); }
+        .model-card.purple::before { background: var(--accent2); }
+        .model-card.yellow::before { background: var(--warning); }
+        .model-card.red::before { background: var(--danger); }
+
+        .model-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .model-name {
+            font-size: 1.5em;
+            font-weight: 700;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+
+        .tag-green { background: rgba(0, 230, 118, 0.15); color: var(--accent3); }
+        .tag-blue { background: rgba(0, 229, 255, 0.15); color: var(--accent); }
+        .tag-purple { background: rgba(124, 77, 255, 0.15); color: var(--accent2); }
+        .tag-yellow { background: rgba(255, 171, 0, 0.15); color: var(--warning); }
+        .tag-red { background: rgba(255, 82, 82, 0.15); color: var(--danger); }
+
+        .spec-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 16px 0;
+        }
+
+        .spec-item {
+            background: var(--surface2);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .spec-label {
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+
+        .spec-value {
+            font-size: 1.2em;
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: var(--surface);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th {
+            background: var(--surface2);
+            padding: 14px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--accent);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.95em;
+        }
+
+        tr:last-child td { border-bottom: none; }
+
+        tr:hover td { background: rgba(0, 229, 255, 0.03); }
+
+        code {
+            background: var(--surface2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.9em;
+            color: var(--accent3);
+        }
+
+        pre {
+            background: var(--surface2);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            overflow-x: auto;
+            margin: 16px 0;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.85em;
+            line-height: 1.6;
+        }
+
+        .callout {
+            background: var(--surface);
+            border-left: 4px solid var(--accent);
+            padding: 20px 24px;
+            border-radius: 0 8px 8px 0;
+            margin: 20px 0;
+        }
+
+        .callout.warn {
+            border-left-color: var(--warning);
+        }
+
+        .callout.good {
+            border-left-color: var(--accent3);
+        }
+
+        .callout.bad {
+            border-left-color: var(--danger);
+        }
+
+        .callout-title {
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: var(--accent);
+        }
+
+        .callout.warn .callout-title { color: var(--warning); }
+        .callout.good .callout-title { color: var(--accent3); }
+        .callout.bad .callout-title { color: var(--danger); }
+
+        .arch-diagram {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 30px;
+            margin: 24px 0;
+            font-family: 'Cascadia Code', 'Fira Code', monospace;
+            font-size: 0.85em;
+            line-height: 1.8;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .two-col { grid-template-columns: 1fr; }
+            .hero h1 { font-size: 2em; }
+        }
+
+        .source-list {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin: 16px 0;
+        }
+
+        .source-list li {
+            margin: 6px 0;
+            padding-left: 8px;
+            font-size: 0.9em;
+            color: var(--text-muted);
+        }
+
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px 32px;
+            margin: 30px 0;
+        }
+
+        .toc-title {
+            font-size: 1.2em;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--accent);
+        }
+
+        .toc ol {
+            padding-left: 24px;
+        }
+
+        .toc li {
+            margin: 8px 0;
+            font-size: 0.95em;
+        }
+
+        .toc a {
+            color: var(--text);
+        }
+
+        .toc a:hover {
+            color: var(--accent);
+        }
+
+        .cost-bar {
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 8px;
+            background: var(--surface2);
+            overflow: hidden;
+        }
+
+        .cost-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+
+<div class="hero">
+    <h1>CNN Super-Resolution Training Plan</h1>
+    <p class="subtitle">G-Buffer Conditioned Game Upscaler: Architecture, Data, Training & Deployment Research</p>
+    <span class="badge">Research Report -- March 2026</span>
+</div>
+
+<div class="container">
+
+    <!-- TABLE OF CONTENTS -->
+    <div class="toc">
+        <div class="toc-title">Table of Contents</div>
+        <ol>
+            <li><a href="#summary">Executive Summary</a></li>
+            <li><a href="#architecture">Architecture Specifics -- G-Buffer Conditioned Upscalers</a></li>
+            <li><a href="#data">Training Data Requirements & Datasets</a></li>
+            <li><a href="#local">Local Training on GTX 4060 8GB</a></li>
+            <li><a href="#cloud">Cloud Training Alternatives</a></li>
+            <li><a href="#frameworks">Training Frameworks & Memory Optimization</a></li>
+            <li><a href="#inference">Post-Training Inference Performance</a></li>
+            <li><a href="#plan">Recommended Training Plan</a></li>
+            <li><a href="#sources">Sources</a></li>
+        </ol>
+    </div>
+
+    <!-- ============================== -->
+    <!-- EXECUTIVE SUMMARY -->
+    <!-- ============================== -->
+    <h2 id="summary">1. Executive Summary</h2>
+
+    <div class="exec-grid">
+        <div class="exec-card">
+            <div class="label">Target Model Size</div>
+            <div class="value">0.5-2M</div>
+            <div class="detail">Parameters. Based on NSRD (1.61M), SPAN (481K), SAFMN (610K), RLFN (317K)</div>
+        </div>
+        <div class="exec-card">
+            <div class="label">Training Time (Local GTX 4060)</div>
+            <div class="value">3-7 days</div>
+            <div class="detail">1M iterations, batch 8-16, FP16, 320x240 patches</div>
+        </div>
+        <div class="exec-card">
+            <div class="label">Training Cost (Cloud)</div>
+            <div class="value">$8-25</div>
+            <div class="detail">A100 80GB on Vast.ai at $0.67/hr for 12-36 hours</div>
+        </div>
+        <div class="exec-card">
+            <div class="label">Expected Inference FPS</div>
+            <div class="value">120-500+</div>
+            <div class="detail">TensorRT FP16 on GTX 4060 at 320x240 input</div>
+        </div>
+    </div>
+
+    <div class="callout good">
+        <div class="callout-title">Key Finding</div>
+        <p>A lightweight CNN (0.5-2M params) with G-buffer conditioning is <strong>entirely trainable on a GTX 4060 8GB</strong> in under a week. The resulting model would run at <strong>120-500+ FPS</strong> with TensorRT -- dramatically faster and lighter than the current SD-Turbo pipeline (39 FPS, ~4GB VRAM). Inference VRAM would drop to <strong>50-200MB</strong>.</p>
+    </div>
+
+    <!-- ============================== -->
+    <!-- ARCHITECTURE SPECIFICS -->
+    <!-- ============================== -->
+    <h2 id="architecture">2. Architecture Specifics -- G-Buffer Conditioned Upscalers</h2>
+
+    <h3>2.1 Reference Architectures from the Literature</h3>
+
+    <!-- NSRD -->
+    <div class="model-card blue">
+        <div class="model-header">
+            <span class="model-name">NSRD (Neural SR with Radiance Demodulation)</span>
+            <span class="tag tag-blue">CVPR 2024</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">Parameters</div>
+                <div class="spec-value">1.61M</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Temporal</div>
+                <div class="spec-value">ConvLSTM</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Reconstruction</div>
+                <div class="spec-value">U-shaped + RCAB</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Training Time</div>
+                <div class="spec-value">~24 hrs/scene</div>
+            </div>
+        </div>
+        <p><strong>Architecture:</strong> Radiance demodulation branch separates lighting from materials. Reliable warping module with gated convolution feeds warped lighting + motion masks into a ConvLSTM, followed by a U-shaped reconstruction module with residual channel attention blocks (RCAB). Uses pixel-unshuffle for HR-to-LR mapping.</p>
+        <p><strong>Inputs:</strong> LR color, depth, normals, motion vectors, material G-buffers.</p>
+        <p><strong>Loss:</strong> L_final = 1.0 * Smooth-L1 + 1.0 * (1 - SSIM) + 1.0 * L_temporal (motion-masked)</p>
+        <p><strong>Training:</strong> 200 epochs, batch 8, 96x96 LR patches, LR 5e-4 (halved every 100 epochs), Adam, RTX 3090.</p>
+        <p><em>Source: <a href="https://arxiv.org/html/2308.06699v2">Li et al., arXiv 2308.06699</a></em></p>
+    </div>
+
+    <!-- QRISP / Qualcomm Efficient NSS -->
+    <div class="model-card green">
+        <div class="model-header">
+            <span class="model-name">Efficient Neural Supersampling (QRISP dataset)</span>
+            <span class="tag tag-green">ICCV 2023</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">Model Variants</div>
+                <div class="spec-value">S / M / L</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Channels</div>
+                <div class="spec-value">16 / 32 / 64</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Conv Layers</div>
+                <div class="spec-value">1 / 3 / 5</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Inference (1080p)</div>
+                <div class="spec-value">1.08 / 1.53 / 3.52 ms</div>
+            </div>
+        </div>
+        <p><strong>Architecture:</strong> 3x3 Conv-ReLU blocks with depth-to-space upsampling. Warping module with jitter compensation and depth-informed dilation for temporal re-projection. First/last conv kernels predicted by MLP conditioned on jitter offset (jitter-conditioned convolutions).</p>
+        <p><strong>Inputs:</strong> Color C_t, depth D_t, jitter offset J_t, previous output Y_{t-1}, previous features f_{t-1}.</p>
+        <p><strong>Loss:</strong> L1 (primary). Also tested weighted SSIM + VGG perceptual loss.</p>
+        <p><strong>Training:</strong> 500K iterations, batch 8 clips x 16 frames, 264x264 HR patches, LR 1e-4 (halved at 200K/400K), Adam.</p>
+        <p><strong>Dataset:</strong> QRISP -- 7,260 training frames from 10 scenes, 1,500 test frames from 3 scenes, 270p-1080p, with color/depth/motion vectors at each resolution.</p>
+        <p><em>Source: <a href="https://ar5iv.labs.arxiv.org/html/2308.01483">Mercier et al., arXiv 2308.01483</a></em></p>
+    </div>
+
+    <!-- Meta Neural Supersampling -->
+    <div class="model-card purple">
+        <div class="model-header">
+            <span class="model-name">Meta Neural Supersampling for Real-Time Rendering</span>
+            <span class="tag tag-purple">SIGGRAPH 2020</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">Upsampling</div>
+                <div class="spec-value">16x supersampling</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Temporal Frames</div>
+                <div class="spec-value">Multiple previous</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Architecture</div>
+                <div class="spec-value">Spatio-temporal CNN</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Inputs</div>
+                <div class="spec-value">Color + Depth + MV</div>
+            </div>
+        </div>
+        <p><strong>Architecture:</strong> Takes rendering attributes (color, depth map, dense motion vectors) from current and multiple previous LR frames. Outputs HR color for the current frame. Spatio-temporal network design with auxiliary G-buffer conditioning.</p>
+        <p><strong>Note:</strong> Exact parameter count not publicly disclosed. Architecture details are partially proprietary.</p>
+        <p><em>Source: <a href="https://research.facebook.com/publications/neural-supersampling-for-real-time-rendering/">Xiao et al., ACM TOG 2020</a></em></p>
+    </div>
+
+    <!-- Arm NSS -->
+    <div class="model-card green">
+        <div class="model-header">
+            <span class="model-name">Arm Neural Super Sampling (NSS)</span>
+            <span class="tag tag-green">2025</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">Backbone</div>
+                <div class="spec-value">4-level UNet</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Compute</div>
+                <div class="spec-value">~10 GOPs</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Target Latency</div>
+                <div class="spec-value">&le;4 ms/frame</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Approach</div>
+                <div class="spec-value">Parameter prediction</div>
+            </div>
+        </div>
+        <p><strong>Architecture:</strong> Four-level UNet backbone with 3 encoder/decoder stages + skip connections. Outputs per-pixel: 4x4 filter kernel, temporal accumulation coefficients, hidden state tensor (recurrent feedback). Input tensor: 12 channels (color, motion vectors, depth, luma derivative, disocclusion mask, reprojected hidden features).</p>
+        <p><strong>Training:</strong> PyTorch + Adam + cosine annealing. Sequences of ~100 frames at 540p (1 spp) paired with 1080p ground truth (16 spp). Spatiotemporal loss penalizing both spatial fidelity and temporal consistency.</p>
+        <p><em>Source: <a href="https://developer.arm.com/community/arm-community-blogs/b/mobile-graphics-and-gaming-blog/posts/how-arm-neural-super-sampling-works">Arm Developer Blog</a>, <a href="https://huggingface.co/Arm/neural-super-sampling">HuggingFace</a></em></p>
+    </div>
+
+    <!-- GameSR -->
+    <div class="model-card yellow">
+        <div class="model-header">
+            <span class="model-name">GameSR</span>
+            <span class="tag tag-yellow">2024</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">Params (inference)</div>
+                <div class="spec-value">~138K</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Params (training)</div>
+                <div class="spec-value">~298K</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">FPS</div>
+                <div class="spec-value">up to 240</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Temporal</div>
+                <div class="spec-value">Lightweight ConvLSTM</div>
+            </div>
+        </div>
+        <p><strong>Architecture:</strong> Reparameterized conv blocks (3 convs collapsed to 1 at inference) + PixelUnshuffle for spatial downsampling + lightweight ConvLSTM for temporal aggregation. Without reparameterization, params rise from 138K to 298K. Without ConvLSTM, params drop to 65K but PSNR drops ~5 dB.</p>
+        <p><strong>Key insight:</strong> Operates on encoded game frames (not raw renders). Bandwidth reduction of 35-49% for cloud gaming.</p>
+        <p><em>Source: <a href="https://openreview.net/forum?id=wnJkdo5Gu9">OpenReview</a></em></p>
+    </div>
+
+    <h3>2.2 Lightweight SR Models (Non-Game-Specific)</h3>
+
+    <table>
+        <tr>
+            <th>Model</th>
+            <th>Params</th>
+            <th>Channels</th>
+            <th>Blocks</th>
+            <th>Loss</th>
+            <th>Training Iters</th>
+            <th>NTIRE Rank</th>
+        </tr>
+        <tr>
+            <td><strong>SPAN</strong></td>
+            <td>481K</td>
+            <td>48</td>
+            <td>6 SPABs (3 conv each)</td>
+            <td>L1</td>
+            <td>1M (x2 rounds)</td>
+            <td>1st (2024 ESR)</td>
+        </tr>
+        <tr>
+            <td><strong>SPAN-S</strong></td>
+            <td>411K</td>
+            <td>48</td>
+            <td>6 SPABs</td>
+            <td>L1</td>
+            <td>1M</td>
+            <td>--</td>
+        </tr>
+        <tr>
+            <td><strong>SAFMN</strong></td>
+            <td>610K</td>
+            <td>48 (c48n12)</td>
+            <td>12 FMMs</td>
+            <td>L1</td>
+            <td>500K-1M</td>
+            <td>2nd (2023 complexity)</td>
+        </tr>
+        <tr>
+            <td><strong>RLFN</strong></td>
+            <td>317K</td>
+            <td>52</td>
+            <td>4 RLFBs (3 conv each)</td>
+            <td>L1 + L2 (finetune)</td>
+            <td>1M (x4 rounds + 500K FT)</td>
+            <td>1st (2022 runtime)</td>
+        </tr>
+        <tr>
+            <td><strong>ESPCN</strong></td>
+            <td>~23K</td>
+            <td>64, 32</td>
+            <td>2 conv + sub-pixel</td>
+            <td>MSE</td>
+            <td>Varies</td>
+            <td>Baseline</td>
+        </tr>
+    </table>
+
+    <h3>2.3 Proposed Architecture for N64 G-Buffer Upscaler</h3>
+
+    <div class="arch-diagram">
+DUAL-BRANCH G-BUFFER CONDITIONED UPSCALER (Proposed)
+=====================================================
+
+RGB Branch:                    G-Buffer Branch:
+  320x240x3 (color)             320x240x5 (depth + normals_xy + motion_xy)
+       |                              |
+  Conv3x3, 48ch, ReLU            Conv3x3, 32ch, ReLU
+       |                              |
+  Conv3x3, 48ch, ReLU            Conv3x3, 32ch, ReLU
+       |                              |
+       +------------- CAT ------------+
+                       |
+              Conv1x1, 48ch (fusion)
+                       |
+         +--- 6x Residual Blocks ---+
+         |   Conv3x3, 48ch, ReLU    |
+         |   Conv3x3, 48ch          |
+         |   + residual skip        |
+         +---------------------------+
+                       |
+            [Optional: ConvLSTM, 48ch hidden]
+            [Warp previous features with MV]
+                       |
+              Conv3x3, 48 * 16ch     (for 4x upscale via sub-pixel)
+                       |
+              PixelShuffle(4)
+                       |
+              1280x960x3 (HR output)
+
+Estimated Parameters: ~800K - 1.5M (depending on ConvLSTM inclusion)
+    </div>
+
+    <h3>2.4 Temporal Component: ConvLSTM vs Feature Warping</h3>
+
+    <div class="two-col">
+        <div class="model-card blue">
+            <h4>ConvLSTM (used by NSRD, GameSR)</h4>
+            <ul style="padding-left: 20px; margin-top: 8px;">
+                <li>Maintains hidden state across frames</li>
+                <li>Learns to selectively accumulate temporal info</li>
+                <li>Adds ~50-200K params for 48-channel hidden state</li>
+                <li>Handles occlusion/disocclusion implicitly</li>
+                <li>NSRD: "effectively utilizes state of intermediate features to obtain more spatial-temporal correlation"</li>
+                <li>GameSR: removing ConvLSTM drops PSNR by ~5 dB</li>
+            </ul>
+        </div>
+        <div class="model-card purple">
+            <h4>Feature Warping (used by QRISP, Arm NSS, Meta)</h4>
+            <ul style="padding-left: 20px; margin-top: 8px;">
+                <li>Warp previous frame features using motion vectors</li>
+                <li>Explicit re-projection is geometrically accurate</li>
+                <li>Needs disocclusion masks for ghosting prevention</li>
+                <li>Lower compute cost than ConvLSTM</li>
+                <li>QRISP: depth-informed dilation + jitter compensation</li>
+                <li>NSRD uses both: warp then ConvLSTM</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-title">Recommendation</div>
+        <p>Use <strong>feature warping with motion vectors</strong> (available from N64 emulator) as the primary temporal mechanism, with a <strong>lightweight ConvLSTM</strong> (48 hidden channels) for residual temporal refinement. This mirrors NSRD's approach and leverages the N64's readily-available motion vector data from the RDP pipeline.</p>
+    </div>
+
+    <h3>2.5 Loss Functions</h3>
+
+    <table>
+        <tr>
+            <th>Loss Component</th>
+            <th>Weight</th>
+            <th>Purpose</th>
+            <th>Used By</th>
+        </tr>
+        <tr>
+            <td><strong>L1 / Smooth-L1</strong></td>
+            <td>1.0</td>
+            <td>Pixel-level fidelity, robust to outliers</td>
+            <td>NSRD, QRISP, SPAN, RLFN, GameSR</td>
+        </tr>
+        <tr>
+            <td><strong>SSIM Loss</strong></td>
+            <td>1.0</td>
+            <td>Structural similarity, perceptual quality</td>
+            <td>NSRD</td>
+        </tr>
+        <tr>
+            <td><strong>VGG Perceptual (relu3_3)</strong></td>
+            <td>0.01-0.1</td>
+            <td>Feature-level texture fidelity</td>
+            <td>QRISP (tested), Real-ESRGAN</td>
+        </tr>
+        <tr>
+            <td><strong>Temporal Consistency</strong></td>
+            <td>1.0</td>
+            <td>Penalize flickering between warped frames</td>
+            <td>NSRD (motion-masked), Arm NSS</td>
+        </tr>
+        <tr>
+            <td><strong>Adversarial (GAN)</strong></td>
+            <td>1e-3</td>
+            <td>Sharp, realistic textures (adds training complexity)</td>
+            <td>Real-ESRGAN, SRGAN</td>
+        </tr>
+    </table>
+
+    <div class="callout good">
+        <div class="callout-title">Recommended Loss for N64 Upscaler</div>
+        <p><code>L_total = 1.0 * L1 + 1.0 * (1 - SSIM) + 1.0 * L_temporal</code></p>
+        <p>This matches NSRD's proven formula. Add VGG perceptual loss (weight 0.05) if textures look too smooth. Avoid GAN loss for initial training -- it complicates convergence and is unnecessary for N64's low-frequency content.</p>
+    </div>
+
+
+    <!-- ============================== -->
+    <!-- TRAINING DATA -->
+    <!-- ============================== -->
+    <h2 id="data">3. Training Data Requirements & Datasets</h2>
+
+    <h3>3.1 How Many Frames Do We Need?</h3>
+
+    <table>
+        <tr>
+            <th>Paper / System</th>
+            <th>Training Frames</th>
+            <th>Scenes</th>
+            <th>Notes</th>
+        </tr>
+        <tr>
+            <td>QRISP (ICCV 2023)</td>
+            <td>7,260</td>
+            <td>10</td>
+            <td>60 FPS sequences, 270p-1080p, sufficient for SOTA results</td>
+        </tr>
+        <tr>
+            <td>NSRD (CVPR 2024)</td>
+            <td>5,000 patches/scene</td>
+            <td>7</td>
+            <td>100-frame sequences, 96x96 LR patches, Unity rendered</td>
+        </tr>
+        <tr>
+            <td>GameIR-SR</td>
+            <td>19,200</td>
+            <td>8 towns</td>
+            <td>640 videos at 720p/1440p from CARLA/UE</td>
+        </tr>
+        <tr>
+            <td>SRGD</td>
+            <td>14,431 (train)</td>
+            <td>Multiple</td>
+            <td>4 resolutions per frame</td>
+        </tr>
+        <tr>
+            <td>Arm NSS</td>
+            <td>~100 frames/scene</td>
+            <td>Multiple</td>
+            <td>540p paired with 1080p (16 spp)</td>
+        </tr>
+        <tr>
+            <td>DLSS (per-game)</td>
+            <td>N/A</td>
+            <td>Per-game</td>
+            <td>64x supersampled "perfect frames"</td>
+        </tr>
+    </table>
+
+    <div class="callout good">
+        <div class="callout-title">Minimum Viable Dataset</div>
+        <p><strong>5,000 - 10,000 paired frames</strong> across 5-10 diverse N64 scenes is sufficient based on QRISP and NSRD results. With data augmentation (random crops, flips, rotations), this expands to 50K+ training patches. For per-game fine-tuning (e.g., SM64 only), even 2,000-3,000 frames may suffice with the right augmentation.</p>
+    </div>
+
+    <h3>3.2 Available Datasets</h3>
+
+    <!-- GameIR -->
+    <div class="model-card green">
+        <div class="model-header">
+            <span class="model-name">GameIR-SR</span>
+            <span class="tag tag-green">Public / MIT License</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">Frames</div>
+                <div class="spec-value">19,200 LR-HR pairs</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Resolution</div>
+                <div class="spec-value">960x720 / 1920x1440</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Auxiliary Data</div>
+                <div class="spec-value">Depth + Segmentation</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Size</div>
+                <div class="spec-value">~10 GB (Parquet)</div>
+            </div>
+        </div>
+        <p><strong>Source:</strong> CARLA simulator (Unreal Engine), 8 towns, 20 spawn sites/town, 640 videos.</p>
+        <p><strong>Format:</strong> WebDataset (tar archives), auto-converted to Parquet on HuggingFace. RGB as PNG, depth as PNG, segmentation maps as PNG. Camera intrinsic/extrinsic matrices included as JSON.</p>
+        <p><strong>Limitations:</strong> No motion vectors. No surface normals. Modern 3D graphics (not N64-style). Driving scenes only.</p>
+        <p><strong>Download:</strong> <code>huggingface-cli download LLLebin/GameIR --repo-type dataset</code></p>
+        <p><em>Source: <a href="https://huggingface.co/datasets/LLLebin/GameIR">HuggingFace</a>, <a href="https://arxiv.org/html/2408.16866v1">Zhou et al., ACCV 2024</a></em></p>
+    </div>
+
+    <!-- SRGD -->
+    <div class="model-card blue">
+        <div class="model-header">
+            <span class="model-name">SRGD (Super Resolution Gaming Dataset)</span>
+            <span class="tag tag-blue">Public</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">GameEngineData</div>
+                <div class="spec-value">14,431 train / 3,600 test</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">DownscaleData</div>
+                <div class="spec-value">29,726 train / 7,421 test</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Resolutions</div>
+                <div class="spec-value">270p / 360p / 540p / 1080p</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Auxiliary</div>
+                <div class="spec-value">Depth + Motion Vectors</div>
+            </div>
+        </div>
+        <p><strong>Source:</strong> Unreal Engine, collected with viewport jittering and mipmap biasing at each resolution.</p>
+        <p><strong>Key advantage:</strong> Includes motion vectors and depth at all resolutions -- exactly the G-buffer data we need.</p>
+        <p><strong>Download:</strong> Originally on Kaggle, now on <a href="https://github.com/epishchik/SRGD">GitHub</a> / HuggingFace.</p>
+        <p><em>Source: <a href="https://github.com/epishchik/SRGD">epishchik/SRGD</a></em></p>
+    </div>
+
+    <!-- QRISP -->
+    <div class="model-card purple">
+        <div class="model-header">
+            <span class="model-name">QRISP Dataset</span>
+            <span class="tag tag-purple">Public</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">Training Frames</div>
+                <div class="spec-value">7,260</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Test Frames</div>
+                <div class="spec-value">1,500</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Scenes</div>
+                <div class="spec-value">13 (10 train / 3 test)</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Modalities</div>
+                <div class="spec-value">Color + Depth + MV + Jitter</div>
+            </div>
+        </div>
+        <p><strong>Resolutions:</strong> 270p to 1080p at 60 FPS sequences. Color, depth, and motion vectors at each resolution. Viewport jittering (Halton-16) and negative mipmap biasing variants.</p>
+        <p><em>Source: <a href="https://ar5iv.labs.arxiv.org/html/2308.01483">Mercier et al., ICCV 2023</a></em></p>
+    </div>
+
+    <h3>3.3 Generating N64 Training Data</h3>
+
+    <div class="two-col">
+        <div class="model-card green">
+            <h4>Option A: paraLLEl-RDP (Recommended)</h4>
+            <ul style="padding-left: 20px; margin-top: 8px;">
+                <li><strong>Native resolution:</strong> 320x240 (256x224 for some games)</li>
+                <li><strong>Upscaled output:</strong> 2x, 4x, or 8x internal resolution via Vulkan</li>
+                <li>At 4x: 1280x960 output -- our exact target</li>
+                <li>At 8x: 2560x1920 output -- even higher quality GT</li>
+                <li>Fully emulates N64 RDP with VI Interface</li>
+                <li>Equivalent of 8x MSAA at highest setting</li>
+                <li><strong>How to extract data:</strong> Run RetroArch with paraLLEl-RDP core. Capture native-res frames + hi-res frames simultaneously via frame dumping. Z-buffer is accessible through the RDP pipeline.</li>
+                <li>Available in RetroArch (Mupen64Plus-Next core)</li>
+            </ul>
+        </div>
+        <div class="model-card purple">
+            <h4>Option B: RT64</h4>
+            <ul style="padding-left: 20px; margin-top: 8px;">
+                <li>N64 graphics renderer with enhancements</li>
+                <li>Runs two renderers simultaneously: one at native 240p, one at arbitrary higher resolution</li>
+                <li>Replays all draw calls at higher resolution</li>
+                <li>Can upscale framebuffer effects</li>
+                <li>Better for native SM64 ports (SM64 PC port, SM64 Render96)</li>
+                <li><strong>Advantage:</strong> Direct access to draw calls = can extract depth, normals, and motion vectors per-frame</li>
+                <li><strong>Disadvantage:</strong> Game-specific integration needed</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="callout">
+        <div class="callout-title">Recommended Data Pipeline</div>
+        <ol style="padding-left: 20px; margin-top: 8px;">
+            <li>Use <strong>paraLLEl-RDP at 4x</strong> (1280x960) as HR ground truth</li>
+            <li>Simultaneously capture <strong>native 320x240</strong> as LR input</li>
+            <li>Extract <strong>Z-buffer</strong> from RDP pipeline as depth map</li>
+            <li>Compute <strong>motion vectors</strong> from frame-to-frame depth + camera reprojection</li>
+            <li>Compute <strong>surface normals</strong> from depth gradients (Sobel filter on Z-buffer)</li>
+            <li>Record <strong>5,000-10,000 frames</strong> across diverse game scenes (SM64 levels, OoT areas, etc.)</li>
+            <li>Resolution pair: <strong>320x240 -> 1280x960 (4x upscale)</strong></li>
+        </ol>
+    </div>
+
+
+    <!-- ============================== -->
+    <!-- LOCAL TRAINING -->
+    <!-- ============================== -->
+    <h2 id="local">4. Local Training on GTX 4060 8GB</h2>
+
+    <h3>4.1 GTX 4060 Specifications</h3>
+
+    <div class="spec-grid">
+        <div class="spec-item">
+            <div class="spec-label">Architecture</div>
+            <div class="spec-value">Ada Lovelace (AD107)</div>
+        </div>
+        <div class="spec-item">
+            <div class="spec-label">CUDA Cores</div>
+            <div class="spec-value">3,072</div>
+        </div>
+        <div class="spec-item">
+            <div class="spec-label">Tensor Cores (4th Gen)</div>
+            <div class="spec-value">96</div>
+        </div>
+        <div class="spec-item">
+            <div class="spec-label">FP32 TFLOPS</div>
+            <div class="spec-value">15.11</div>
+        </div>
+        <div class="spec-item">
+            <div class="spec-label">FP16 Tensor TFLOPS</div>
+            <div class="spec-value">121 (w/ sparsity)</div>
+        </div>
+        <div class="spec-item">
+            <div class="spec-label">VRAM</div>
+            <div class="spec-value">8 GB GDDR6</div>
+        </div>
+    </div>
+
+    <h3>4.2 VRAM Budget Analysis</h3>
+
+    <table>
+        <tr>
+            <th>Component</th>
+            <th>FP32</th>
+            <th>FP16 (AMP)</th>
+            <th>Notes</th>
+        </tr>
+        <tr>
+            <td>Model weights (1.5M params)</td>
+            <td>6 MB</td>
+            <td>3 MB</td>
+            <td>4 bytes/param FP32, 2 bytes/param FP16</td>
+        </tr>
+        <tr>
+            <td>Optimizer states (Adam)</td>
+            <td>18 MB</td>
+            <td>18 MB</td>
+            <td>2 momentum buffers + master weights (FP32 copy kept in AMP)</td>
+        </tr>
+        <tr>
+            <td>Gradients</td>
+            <td>6 MB</td>
+            <td>3 MB</td>
+            <td>Same size as weights</td>
+        </tr>
+        <tr>
+            <td>Activations (batch=16, 96x96 patches)</td>
+            <td>~1.5 GB</td>
+            <td>~0.8 GB</td>
+            <td>Dominant cost; scales with batch and spatial size</td>
+        </tr>
+        <tr>
+            <td>Input batch (16 x 320x240 x 8ch)</td>
+            <td>~38 MB</td>
+            <td>~19 MB</td>
+            <td>RGB(3) + depth(1) + normals(2) + MV(2) = 8 channels</td>
+        </tr>
+        <tr>
+            <td>VGG loss network (if used)</td>
+            <td>~56 MB</td>
+            <td>~56 MB</td>
+            <td>Frozen VGG-16 features, fixed cost</td>
+        </tr>
+        <tr>
+            <td>PyTorch overhead / CUDA context</td>
+            <td>~0.8 GB</td>
+            <td>~0.8 GB</td>
+            <td>Fixed overhead</td>
+        </tr>
+        <tr>
+            <td><strong>TOTAL (batch=16, 96x96 patches)</strong></td>
+            <td><strong>~2.4 GB</strong></td>
+            <td><strong>~1.7 GB</strong></td>
+            <td><strong>Comfortably fits in 8GB</strong></td>
+        </tr>
+        <tr>
+            <td><strong>TOTAL (batch=8, full 320x240)</strong></td>
+            <td><strong>~4.5 GB</strong></td>
+            <td><strong>~3.0 GB</strong></td>
+            <td><strong>Fits in 8GB with room to spare</strong></td>
+        </tr>
+        <tr>
+            <td><strong>TOTAL (batch=16, full 320x240)</strong></td>
+            <td><strong>~7.5 GB</strong></td>
+            <td><strong>~4.5 GB</strong></td>
+            <td><strong>FP32 tight; FP16 comfortable</strong></td>
+        </tr>
+    </table>
+
+    <div class="callout good">
+        <div class="callout-title">Verdict: Fits Easily</div>
+        <p>A 1.5M parameter model with batch size 16 at full 320x240 resolution fits in <strong>~4.5 GB with FP16</strong>. This leaves 3.5 GB headroom. You could even use batch size 32 with FP16 and 96x96 crops. No gradient checkpointing needed at this model scale.</p>
+    </div>
+
+    <h3>4.3 Training Time Estimates</h3>
+
+    <h4>Reference Training Times from Papers</h4>
+
+    <table>
+        <tr>
+            <th>Model</th>
+            <th>Params</th>
+            <th>Iterations</th>
+            <th>Hardware</th>
+            <th>Time</th>
+        </tr>
+        <tr>
+            <td>NSRD</td>
+            <td>1.61M</td>
+            <td>200 epochs (~50K iters)</td>
+            <td>1x RTX 3090</td>
+            <td>~24 hrs/scene</td>
+        </tr>
+        <tr>
+            <td>SPAN</td>
+            <td>481K</td>
+            <td>1M (x2 rounds)</td>
+            <td>4x A100</td>
+            <td>~12 hrs/run</td>
+        </tr>
+        <tr>
+            <td>Real-ESRNET</td>
+            <td>~16M</td>
+            <td>1M</td>
+            <td>4x V100</td>
+            <td>6-7 days</td>
+        </tr>
+        <tr>
+            <td>Real-ESRNET</td>
+            <td>~16M</td>
+            <td>1M</td>
+            <td>2x RTX 3090</td>
+            <td>~10 days</td>
+        </tr>
+        <tr>
+            <td>Real-ESRGAN (finetune)</td>
+            <td>~16M</td>
+            <td>100-200K</td>
+            <td>1x GPU</td>
+            <td>1-2 days</td>
+        </tr>
+        <tr>
+            <td>QRISP models</td>
+            <td>Small-Large</td>
+            <td>500K</td>
+            <td>1x GPU</td>
+            <td>~2-4 days (est.)</td>
+        </tr>
+        <tr>
+            <td>SwinIR</td>
+            <td>~900K</td>
+            <td>500K</td>
+            <td>8x V100S</td>
+            <td>~5 days</td>
+        </tr>
+    </table>
+
+    <h4>GTX 4060 Estimated Training Speed</h4>
+
+    <div class="callout">
+        <div class="callout-title">Calculation</div>
+        <p>The GTX 4060 has approximately <strong>50-60% of the throughput</strong> of an RTX 3090 for training workloads (15 TFLOPS FP32 vs 36 TFLOPS, but 4th-gen tensor cores partially compensate with FP16). For a 1.5M parameter model:</p>
+        <ul style="padding-left: 20px; margin-top: 8px;">
+            <li>NSRD (1.61M params, 200 epochs, RTX 3090) = 24 hours</li>
+            <li>GTX 4060 equivalent: <strong>~36-48 hours</strong> for similar training run</li>
+            <li>For a full 500K-1M iteration run: <strong>3-7 days</strong></li>
+        </ul>
+        <p style="margin-top: 12px;">Estimated iteration speed on GTX 4060 (batch 16, 96x96 patches, FP16):</p>
+        <ul style="padding-left: 20px;">
+            <li>~2-4 iterations/second</li>
+            <li>500K iterations: ~35-70 hours (1.5-3 days)</li>
+            <li>1M iterations: ~70-140 hours (3-6 days)</li>
+        </ul>
+    </div>
+
+    <h4>Recommended Training Configuration for GTX 4060</h4>
+
+    <pre>
+# Training config for GTX 4060 8GB
+model:
+  type: GBufferSRNet
+  params: ~1.5M
+  channels: 48
+  blocks: 6
+  g_buffer_channels: 5  # depth + normals_xy + mv_xy
+
+training:
+  batch_size: 16          # FP16 with 96x96 patches
+  patch_size: 96          # LR crop size
+  total_iterations: 500000
+  optimizer: Adam
+  learning_rate: 5e-4
+  lr_schedule: halve every 100K
+  precision: fp16         # PyTorch AMP
+  loss: L1 + SSIM + temporal
+
+  # Alternative: full resolution
+  # batch_size: 8         # full 320x240 input
+  # total_iterations: 300000
+
+dataset:
+  train_frames: 5000-10000
+  format: LMDB            # fast random access
+  augmentation: [flip_h, flip_v, rotate_90]
+
+estimated_time: 3-5 days
+estimated_vram: 3-5 GB
+    </pre>
+
+
+    <!-- ============================== -->
+    <!-- CLOUD TRAINING -->
+    <!-- ============================== -->
+    <h2 id="cloud">5. Cloud Training Alternatives</h2>
+
+    <h3>5.1 GPU Cloud Pricing (March 2026)</h3>
+
+    <table>
+        <tr>
+            <th>GPU</th>
+            <th>VRAM</th>
+            <th>Lambda Labs</th>
+            <th>RunPod</th>
+            <th>Vast.ai</th>
+            <th>Google Colab</th>
+        </tr>
+        <tr>
+            <td><strong>A10</strong></td>
+            <td>24 GB</td>
+            <td>$0.86/hr</td>
+            <td>~$0.50/hr</td>
+            <td>~$0.30/hr</td>
+            <td>N/A</td>
+        </tr>
+        <tr>
+            <td><strong>A100 40GB</strong></td>
+            <td>40 GB</td>
+            <td>$1.48/hr</td>
+            <td>$0.60/hr</td>
+            <td>$0.52/hr</td>
+            <td>~$1.50/hr (15 CU/hr)</td>
+        </tr>
+        <tr>
+            <td><strong>A100 80GB</strong></td>
+            <td>80 GB</td>
+            <td>$2.06/hr</td>
+            <td>$0.79/hr</td>
+            <td>$0.67/hr</td>
+            <td>~$1.50/hr (15 CU/hr)</td>
+        </tr>
+        <tr>
+            <td><strong>H100 SXM</strong></td>
+            <td>80 GB</td>
+            <td>$3.44/hr</td>
+            <td>$1.99/hr</td>
+            <td>$1.87/hr</td>
+            <td>N/A</td>
+        </tr>
+        <tr>
+            <td><strong>RTX 4090</strong></td>
+            <td>24 GB</td>
+            <td>N/A</td>
+            <td>~$0.40/hr</td>
+            <td>~$0.25/hr</td>
+            <td>N/A</td>
+        </tr>
+        <tr>
+            <td><strong>RTX 3090</strong></td>
+            <td>24 GB</td>
+            <td>N/A</td>
+            <td>~$0.25/hr</td>
+            <td>~$0.15/hr</td>
+            <td>N/A</td>
+        </tr>
+        <tr>
+            <td><strong>V100</strong></td>
+            <td>16 GB</td>
+            <td>$0.63/hr</td>
+            <td>~$0.20/hr</td>
+            <td>~$0.12/hr</td>
+            <td>Retired</td>
+        </tr>
+    </table>
+
+    <h3>5.2 Google Colab Details</h3>
+
+    <div class="model-card blue">
+        <div class="model-header">
+            <span class="model-name">Google Colab Pro+</span>
+            <span class="tag tag-blue">$49.99/month</span>
+        </div>
+        <div class="spec-grid">
+            <div class="spec-item">
+                <div class="spec-label">GPU Access</div>
+                <div class="spec-value">T4 / A100 40GB / A100 80GB</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">Compute Units</div>
+                <div class="spec-value">$0.10/CU</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">A100 Rate</div>
+                <div class="spec-value">15 CU/hr (~$1.50/hr)</div>
+            </div>
+            <div class="spec-item">
+                <div class="spec-label">T4 Rate</div>
+                <div class="spec-value">1.96 CU/hr (~$0.20/hr)</div>
+            </div>
+        </div>
+        <p><strong>T4 hours per 100 CU:</strong> ~50 hours. <strong>A100 hours per 100 CU:</strong> ~6.7 hours.</p>
+        <p><strong>Limitations:</strong> GPU availability not guaranteed even with Pro+. Sessions can be interrupted. Max runtime varies. A100 restricted to Pro+ only.</p>
+    </div>
+
+    <h3>5.3 Cloud Training Cost Estimates</h3>
+
+    <table>
+        <tr>
+            <th>Scenario</th>
+            <th>GPU</th>
+            <th>Provider</th>
+            <th>Est. Time</th>
+            <th>Est. Cost</th>
+        </tr>
+        <tr>
+            <td>Quick experiment (100K iters)</td>
+            <td>RTX 3090</td>
+            <td>Vast.ai</td>
+            <td>~6-8 hrs</td>
+            <td><strong>$0.90-1.20</strong></td>
+        </tr>
+        <tr>
+            <td>Full training (500K iters)</td>
+            <td>A100 40GB</td>
+            <td>Vast.ai</td>
+            <td>~12-18 hrs</td>
+            <td><strong>$6-9</strong></td>
+        </tr>
+        <tr>
+            <td>Full training (500K iters)</td>
+            <td>A100 80GB</td>
+            <td>RunPod</td>
+            <td>~12-18 hrs</td>
+            <td><strong>$9-14</strong></td>
+        </tr>
+        <tr>
+            <td>Full training (1M iters, large batch)</td>
+            <td>A100 80GB</td>
+            <td>Vast.ai</td>
+            <td>~24-36 hrs</td>
+            <td><strong>$16-24</strong></td>
+        </tr>
+        <tr>
+            <td>Full training (1M iters)</td>
+            <td>H100</td>
+            <td>RunPod</td>
+            <td>~10-16 hrs</td>
+            <td><strong>$20-32</strong></td>
+        </tr>
+        <tr>
+            <td>Full training (500K iters)</td>
+            <td>A100</td>
+            <td>Colab Pro+</td>
+            <td>~12-18 hrs</td>
+            <td><strong>~$18-27 in CU</strong></td>
+        </tr>
+        <tr>
+            <td>Full training (500K iters)</td>
+            <td>T4</td>
+            <td>Colab Pro+</td>
+            <td>~48-72 hrs</td>
+            <td><strong>~$10-14 in CU</strong></td>
+        </tr>
+    </table>
+
+    <div class="callout good">
+        <div class="callout-title">Best Value: Vast.ai RTX 3090/4090</div>
+        <p>For this small model, an A100's massive VRAM is overkill. An <strong>RTX 4090 on Vast.ai (~$0.25/hr)</strong> gives 24GB VRAM and very fast training. Total cost for 500K iterations: <strong>$4-6</strong>. You get ~80% of A100 throughput at 1/3 the price. Even cheaper: <strong>RTX 3090 at ~$0.15/hr = $2-3 total</strong>.</p>
+    </div>
+
+    <h3>5.4 Cloud Speed Estimates by GPU</h3>
+
+    <table>
+        <tr>
+            <th>GPU</th>
+            <th>FP16 TFLOPS (dense)</th>
+            <th>Relative to GTX 4060</th>
+            <th>Est. Time for 500K iters</th>
+        </tr>
+        <tr>
+            <td>GTX 4060</td>
+            <td>~60 (tensor)</td>
+            <td>1.0x (baseline)</td>
+            <td>35-70 hrs</td>
+        </tr>
+        <tr>
+            <td>RTX 3090</td>
+            <td>~71</td>
+            <td>~1.2x</td>
+            <td>28-55 hrs</td>
+        </tr>
+        <tr>
+            <td>RTX 4090</td>
+            <td>~165</td>
+            <td>~2.7x</td>
+            <td>13-26 hrs</td>
+        </tr>
+        <tr>
+            <td>A100 40GB</td>
+            <td>~156</td>
+            <td>~2.6x</td>
+            <td>14-27 hrs</td>
+        </tr>
+        <tr>
+            <td>A100 80GB</td>
+            <td>~156</td>
+            <td>~2.6x</td>
+            <td>14-27 hrs (larger batches)</td>
+        </tr>
+        <tr>
+            <td>H100 SXM</td>
+            <td>~268</td>
+            <td>~4.5x</td>
+            <td>8-16 hrs</td>
+        </tr>
+    </table>
+
+
+    <!-- ============================== -->
+    <!-- FRAMEWORKS -->
+    <!-- ============================== -->
+    <h2 id="frameworks">6. Training Frameworks & Memory Optimization</h2>
+
+    <h3>6.1 BasicSR</h3>
+
+    <div class="model-card green">
+        <div class="model-header">
+            <span class="model-name">BasicSR (XPixelGroup)</span>
+            <span class="tag tag-green">Recommended</span>
+        </div>
+        <p><strong>What it is:</strong> Open-source PyTorch toolbox for image/video restoration. Used by Real-ESRGAN, SwinIR, EDVR, BasicVSR, SPAN, SAFMN, RLFN, and most NTIRE challenge winners.</p>
+        <h4>How to use with custom architectures:</h4>
+        <ol style="padding-left: 20px; margin-top: 8px;">
+            <li>Define your model in <code>basicsr/archs/your_model_arch.py</code></li>
+            <li>Register it with <code>@ARCH_REGISTRY.register()</code></li>
+            <li>Create a YAML config specifying architecture, dataset, training params</li>
+            <li>Run: <code>python basicsr/train.py -opt options/train/your_config.yml</code></li>
+        </ol>
+        <h4>Key features:</h4>
+        <ul style="padding-left: 20px; margin-top: 8px;">
+            <li>Registry pattern for models, losses, datasets (plug-and-play)</li>
+            <li>Built-in: L1, L2, perceptual/VGG, GAN losses</li>
+            <li>Built-in: DIV2K, LMDB dataset loaders</li>
+            <li>DDP multi-GPU training out of the box</li>
+            <li>Logging, checkpointing, validation metrics (PSNR, SSIM)</li>
+            <li>Easy to add custom datasets (just implement a DataLoader)</li>
+        </ul>
+        <p><em>Source: <a href="https://github.com/XPixelGroup/BasicSR">GitHub</a></em></p>
+    </div>
+
+    <h3>6.2 HuggingFace Accelerate</h3>
+
+    <div class="model-card blue">
+        <div class="model-header">
+            <span class="model-name">HuggingFace Accelerate</span>
+            <span class="tag tag-blue">Alternative</span>
+        </div>
+        <p><strong>What it is:</strong> Lightweight wrapper for PyTorch training that handles distributed training, mixed precision, and gradient accumulation with minimal code changes.</p>
+        <h4>Key features for this project:</h4>
+        <ul style="padding-left: 20px; margin-top: 8px;">
+            <li>Mixed precision: <code>fp16</code>, <code>bf16</code>, <code>fp8</code> with one flag</li>
+            <li>Gradient accumulation: simulate larger batch sizes</li>
+            <li>Single GPU, multi-GPU, TPU support without code changes</li>
+            <li>Integrates with DeepSpeed and FSDP</li>
+            <li><strong>Pro:</strong> More flexible for custom training loops than BasicSR</li>
+            <li><strong>Con:</strong> No built-in SR-specific losses or metrics; you write more boilerplate</li>
+        </ul>
+        <p><em>Source: <a href="https://github.com/huggingface/accelerate">GitHub</a></em></p>
+    </div>
+
+    <h3>6.3 Memory Optimization Techniques</h3>
+
+    <table>
+        <tr>
+            <th>Technique</th>
+            <th>Memory Savings</th>
+            <th>Speed Impact</th>
+            <th>Needed for GTX 4060?</th>
+        </tr>
+        <tr>
+            <td><strong>Mixed Precision (FP16 AMP)</strong></td>
+            <td>~50% reduction in activations</td>
+            <td>+10-30% faster (tensor cores)</td>
+            <td><span class="tag tag-green">Yes -- always use</span></td>
+        </tr>
+        <tr>
+            <td><strong>Gradient Checkpointing</strong></td>
+            <td>50-70% reduction in activation memory</td>
+            <td>-20-33% slower</td>
+            <td><span class="tag tag-yellow">No -- model too small to need it</span></td>
+        </tr>
+        <tr>
+            <td><strong>Gradient Accumulation</strong></td>
+            <td>Simulates larger batch at same memory</td>
+            <td>Linear slowdown per step</td>
+            <td><span class="tag tag-yellow">Optional -- use if batch 16+ is desired</span></td>
+        </tr>
+        <tr>
+            <td><strong>LMDB Dataset Format</strong></td>
+            <td>N/A (I/O optimization)</td>
+            <td>2-5x faster data loading</td>
+            <td><span class="tag tag-green">Yes -- prevents I/O bottleneck</span></td>
+        </tr>
+        <tr>
+            <td><strong>Remove BatchNorm</strong></td>
+            <td>~40% reduction per BN layer</td>
+            <td>Neutral</td>
+            <td><span class="tag tag-green">Yes -- standard for SR models</span></td>
+        </tr>
+        <tr>
+            <td><strong>Compile (torch.compile)</strong></td>
+            <td>Slight reduction (kernel fusion)</td>
+            <td>+10-30% faster</td>
+            <td><span class="tag tag-green">Yes -- free speedup</span></td>
+        </tr>
+    </table>
+
+    <h3>6.4 Batch Size Feasibility on 8GB</h3>
+
+    <table>
+        <tr>
+            <th>Configuration</th>
+            <th>Batch Size</th>
+            <th>Precision</th>
+            <th>Est. VRAM</th>
+            <th>Status</th>
+        </tr>
+        <tr>
+            <td>96x96 LR patches (standard SR crop)</td>
+            <td>64</td>
+            <td>FP16</td>
+            <td>~3.5 GB</td>
+            <td><span class="tag tag-green">Fits easily</span></td>
+        </tr>
+        <tr>
+            <td>96x96 LR patches</td>
+            <td>64</td>
+            <td>FP32</td>
+            <td>~5.5 GB</td>
+            <td><span class="tag tag-green">Fits</span></td>
+        </tr>
+        <tr>
+            <td>Full 320x240 input</td>
+            <td>16</td>
+            <td>FP16</td>
+            <td>~4.5 GB</td>
+            <td><span class="tag tag-green">Fits</span></td>
+        </tr>
+        <tr>
+            <td>Full 320x240 input</td>
+            <td>16</td>
+            <td>FP32</td>
+            <td>~7.5 GB</td>
+            <td><span class="tag tag-yellow">Tight</span></td>
+        </tr>
+        <tr>
+            <td>Full 320x240 input</td>
+            <td>32</td>
+            <td>FP16</td>
+            <td>~7.0 GB</td>
+            <td><span class="tag tag-yellow">Tight but possible</span></td>
+        </tr>
+        <tr>
+            <td>Full 320x240 input + VGG loss</td>
+            <td>8</td>
+            <td>FP16</td>
+            <td>~3.5 GB</td>
+            <td><span class="tag tag-green">Fits easily</span></td>
+        </tr>
+    </table>
+
+
+    <!-- ============================== -->
+    <!-- INFERENCE PERFORMANCE -->
+    <!-- ============================== -->
+    <h2 id="inference">7. Post-Training Inference Performance</h2>
+
+    <h3>7.1 Expected FPS on GTX 4060</h3>
+
+    <table>
+        <tr>
+            <th>Model Size</th>
+            <th>Input Resolution</th>
+            <th>Backend</th>
+            <th>Precision</th>
+            <th>Est. Inference Time</th>
+            <th>Est. FPS</th>
+        </tr>
+        <tr>
+            <td>~500K params (SPAN-like)</td>
+            <td>320x240</td>
+            <td>PyTorch</td>
+            <td>FP32</td>
+            <td>~3-5 ms</td>
+            <td>200-330</td>
+        </tr>
+        <tr>
+            <td>~500K params</td>
+            <td>320x240</td>
+            <td>PyTorch</td>
+            <td>FP16</td>
+            <td>~2-3 ms</td>
+            <td>330-500</td>
+        </tr>
+        <tr>
+            <td>~500K params</td>
+            <td>320x240</td>
+            <td>TensorRT</td>
+            <td>FP16</td>
+            <td>~1-2 ms</td>
+            <td><strong>500-1000</strong></td>
+        </tr>
+        <tr>
+            <td>~1.5M params (proposed)</td>
+            <td>320x240</td>
+            <td>PyTorch</td>
+            <td>FP32</td>
+            <td>~5-10 ms</td>
+            <td>100-200</td>
+        </tr>
+        <tr>
+            <td>~1.5M params</td>
+            <td>320x240</td>
+            <td>PyTorch</td>
+            <td>FP16</td>
+            <td>~3-6 ms</td>
+            <td>170-330</td>
+        </tr>
+        <tr>
+            <td>~1.5M params</td>
+            <td>320x240</td>
+            <td>TensorRT</td>
+            <td>FP16</td>
+            <td>~1.5-3 ms</td>
+            <td><strong>330-660</strong></td>
+        </tr>
+        <tr>
+            <td>~1.5M params</td>
+            <td>320x240</td>
+            <td>TensorRT</td>
+            <td>INT8</td>
+            <td>~0.8-1.5 ms</td>
+            <td><strong>660-1250</strong></td>
+        </tr>
+    </table>
+
+    <div class="callout">
+        <div class="callout-title">Estimation Basis</div>
+        <p>QRISP model (similar complexity, 16-64 channels) achieves 1.08 ms at <strong>1080p</strong> on RTX 3090 in FP16. Our input is 320x240 = <strong>6.75x fewer pixels than 1080p</strong>. Even accounting for the GTX 4060 being ~60% of RTX 3090, we expect sub-2ms inference. ESPCN (23K params) achieves ~26-38 ms per frame at much higher resolutions on older hardware. TensorRT typically provides a 50-100% speedup over raw PyTorch.</p>
+    </div>
+
+    <h3>7.2 VRAM at Inference Time</h3>
+
+    <table>
+        <tr>
+            <th>Component</th>
+            <th>FP16</th>
+            <th>INT8</th>
+        </tr>
+        <tr>
+            <td>Model weights (1.5M params)</td>
+            <td>3 MB</td>
+            <td>1.5 MB</td>
+        </tr>
+        <tr>
+            <td>Input buffer (320x240x8ch)</td>
+            <td>1.2 MB</td>
+            <td>0.6 MB</td>
+        </tr>
+        <tr>
+            <td>Output buffer (1280x960x3ch)</td>
+            <td>7.4 MB</td>
+            <td>7.4 MB</td>
+        </tr>
+        <tr>
+            <td>Intermediate activations</td>
+            <td>~20-50 MB</td>
+            <td>~10-25 MB</td>
+        </tr>
+        <tr>
+            <td>TensorRT engine overhead</td>
+            <td>~30-50 MB</td>
+            <td>~30-50 MB</td>
+        </tr>
+        <tr>
+            <td>Temporal state (ConvLSTM hidden)</td>
+            <td>~3 MB</td>
+            <td>~1.5 MB</td>
+        </tr>
+        <tr>
+            <td><strong>TOTAL</strong></td>
+            <td><strong>~65-115 MB</strong></td>
+            <td><strong>~50-85 MB</strong></td>
+        </tr>
+    </table>
+
+    <h3>7.3 Comparison to Current SD-Turbo Pipeline</h3>
+
+    <table>
+        <tr>
+            <th>Metric</th>
+            <th>Current (SD-Turbo)</th>
+            <th>Proposed (CNN + G-buffer)</th>
+            <th>Improvement</th>
+        </tr>
+        <tr>
+            <td><strong>FPS</strong></td>
+            <td>~39 FPS</td>
+            <td>120-500+ FPS</td>
+            <td><span class="tag tag-green">3-13x faster</span></td>
+        </tr>
+        <tr>
+            <td><strong>Inference VRAM</strong></td>
+            <td>~4 GB</td>
+            <td>~65-115 MB</td>
+            <td><span class="tag tag-green">35-60x less</span></td>
+        </tr>
+        <tr>
+            <td><strong>Latency</strong></td>
+            <td>~25 ms/frame</td>
+            <td>~1.5-6 ms/frame</td>
+            <td><span class="tag tag-green">4-17x lower</span></td>
+        </tr>
+        <tr>
+            <td><strong>Model Size</strong></td>
+            <td>~2-4 GB (SD weights)</td>
+            <td>~3-6 MB</td>
+            <td><span class="tag tag-green">500-1300x smaller</span></td>
+        </tr>
+        <tr>
+            <td><strong>Quality Control</strong></td>
+            <td>Hallucination-prone (diffusion)</td>
+            <td>Deterministic, G-buffer guided</td>
+            <td><span class="tag tag-green">More faithful to source</span></td>
+        </tr>
+        <tr>
+            <td><strong>Temporal Consistency</strong></td>
+            <td>Requires noise warping hacks</td>
+            <td>Built-in ConvLSTM + MV warping</td>
+            <td><span class="tag tag-green">Native temporal stability</span></td>
+        </tr>
+        <tr>
+            <td><strong>Creative Enhancement</strong></td>
+            <td>Strong (adds texture/detail)</td>
+            <td>Moderate (faithful upscale)</td>
+            <td><span class="tag tag-yellow">Tradeoff</span></td>
+        </tr>
+    </table>
+
+    <div class="callout warn">
+        <div class="callout-title">Quality Tradeoff Note</div>
+        <p>The CNN approach will produce a <strong>faithful 4x upscale</strong> -- sharper edges, proper geometry from G-buffers, stable temporally. But it will not "hallucinate" new texture details the way SD-Turbo does. The output will look like a very clean, sharp version of the N64 game rather than a reimagined HD version. For an N64 game running at 320x240, the CNN approach is arguably <strong>more appropriate</strong> -- it preserves the artistic intent while removing aliasing and blur.</p>
+    </div>
+
+
+    <!-- ============================== -->
+    <!-- RECOMMENDED PLAN -->
+    <!-- ============================== -->
+    <h2 id="plan">8. Recommended Training Plan</h2>
+
+    <h3>Phase 1: Data Collection (1-2 days)</h3>
+    <div class="model-card green">
+        <ol style="padding-left: 20px;">
+            <li>Set up RetroArch with paraLLEl-RDP core</li>
+            <li>Configure dual capture: native 320x240 + 4x upscaled 1280x960</li>
+            <li>Enable Z-buffer output from RDP pipeline</li>
+            <li>Record 5,000-10,000 frames across 5-10 diverse SM64 levels</li>
+            <li>Compute motion vectors from frame-pair depth reprojection</li>
+            <li>Compute surface normals from depth gradients</li>
+            <li>Convert dataset to LMDB format for fast training I/O</li>
+        </ol>
+    </div>
+
+    <h3>Phase 2: Model Implementation (1 day)</h3>
+    <div class="model-card blue">
+        <ol style="padding-left: 20px;">
+            <li>Implement dual-branch architecture in PyTorch (see Section 2.3)</li>
+            <li>Register in BasicSR or set up custom training loop with HF Accelerate</li>
+            <li>Implement loss functions: L1 + SSIM + temporal consistency</li>
+            <li>Write YAML training config</li>
+            <li>Sanity check: overfit on 10 frames to verify architecture works</li>
+        </ol>
+    </div>
+
+    <h3>Phase 3: Training (3-7 days local OR 1 day cloud)</h3>
+    <div class="model-card purple">
+        <h4>Option A: Local (GTX 4060, free)</h4>
+        <ul style="padding-left: 20px; margin-top: 8px;">
+            <li>500K iterations, batch 16, 96x96 patches, FP16</li>
+            <li>Estimated: 3-5 days</li>
+            <li>VRAM usage: ~3-4 GB</li>
+        </ul>
+        <h4>Option B: Cloud (Vast.ai RTX 4090, ~$4-6)</h4>
+        <ul style="padding-left: 20px; margin-top: 8px;">
+            <li>500K iterations, batch 64, 96x96 patches, FP16</li>
+            <li>Estimated: 12-18 hours</li>
+            <li>Upload dataset (~2-5 GB), run training, download checkpoint</li>
+        </ul>
+        <h4>Option C: Cloud (Vast.ai A100, ~$8-10)</h4>
+        <ul style="padding-left: 20px; margin-top: 8px;">
+            <li>1M iterations, batch 64, larger patches</li>
+            <li>Estimated: 18-24 hours</li>
+            <li>Best quality, reasonable cost</li>
+        </ul>
+    </div>
+
+    <h3>Phase 4: Optimization & Deployment (1 day)</h3>
+    <div class="model-card yellow">
+        <ol style="padding-left: 20px;">
+            <li>Export to ONNX: <code>torch.onnx.export(model, ...)</code></li>
+            <li>Convert to TensorRT FP16: <code>trtexec --onnx=model.onnx --fp16</code></li>
+            <li>Optionally quantize to INT8 for maximum speed</li>
+            <li>Integrate into existing N64 DLSS pipeline, replacing SD-Turbo</li>
+            <li>Benchmark: target 120+ FPS at 320x240 -> 1280x960</li>
+        </ol>
+    </div>
+
+    <div class="callout good">
+        <div class="callout-title">Total Timeline: 6-11 days (local) or 4-5 days (with cloud training)</div>
+        <p>Total cost if using cloud: <strong>$4-25</strong> depending on GPU and iterations. This is a realistic, achievable project that would produce a dramatically faster and lighter upscaler than the current SD-Turbo pipeline.</p>
+    </div>
+
+
+    <!-- ============================== -->
+    <!-- SOURCES -->
+    <!-- ============================== -->
+    <h2 id="sources">9. Sources</h2>
+
+    <h3>Papers & Architectures</h3>
+    <ul class="source-list">
+        <li><a href="https://arxiv.org/html/2308.06699v2">NSRD: Neural Super-Resolution for Real-time Rendering with Radiance Demodulation (Li et al., CVPR 2024)</a></li>
+        <li><a href="https://ar5iv.labs.arxiv.org/html/2308.01483">Efficient Neural Supersampling on a Novel Gaming Dataset / QRISP (Mercier et al., ICCV 2023)</a></li>
+        <li><a href="https://research.facebook.com/publications/neural-supersampling-for-real-time-rendering/">Meta: Neural Supersampling for Real-time Rendering (Xiao et al., SIGGRAPH 2020)</a></li>
+        <li><a href="https://developer.arm.com/community/arm-community-blogs/b/mobile-graphics-and-gaming-blog/posts/how-arm-neural-super-sampling-works">Arm Neural Super Sampling: Architecture and Training</a></li>
+        <li><a href="https://huggingface.co/Arm/neural-super-sampling">Arm NSS on HuggingFace</a></li>
+        <li><a href="https://openreview.net/forum?id=wnJkdo5Gu9">GameSR: Real-Time Super-Resolution for Interactive Gaming</a></li>
+        <li><a href="https://arxiv.org/html/2311.12770v3">SPAN: Swift Parameter-free Attention Network (CVPR 2024 NTIRE Winner)</a></li>
+        <li><a href="https://github.com/sunny2109/SAFMN">SAFMN: Spatially-Adaptive Feature Modulation Network (ICCV 2023)</a></li>
+        <li><a href="https://github.com/bytedance/RLFN">RLFN: Residual Local Feature Network (ByteDance, NTIRE 2022 Winner)</a></li>
+        <li><a href="https://arxiv.org/abs/1603.08155">Perceptual Losses for Real-Time Style Transfer and Super-Resolution (Johnson et al., ECCV 2016)</a></li>
+    </ul>
+
+    <h3>Datasets</h3>
+    <ul class="source-list">
+        <li><a href="https://huggingface.co/datasets/LLLebin/GameIR">GameIR Dataset on HuggingFace (MIT License)</a></li>
+        <li><a href="https://arxiv.org/html/2408.16866v1">GameIR Paper (Zhou et al., ACCV 2024)</a></li>
+        <li><a href="https://github.com/epishchik/SRGD">SRGD: Super Resolution Gaming Dataset</a></li>
+    </ul>
+
+    <h3>N64 Emulation</h3>
+    <ul class="source-list">
+        <li><a href="https://www.libretro.com/index.php/parallel-n64-low-level-rdp-upscaling-is-finally-here/">paraLLEl-RDP: Low-level RDP Upscaling (Libretro)</a></li>
+        <li><a href="https://github.com/rt64/rt64">RT64: N64 Graphics Renderer with Enhancements</a></li>
+    </ul>
+
+    <h3>Training Tools & Frameworks</h3>
+    <ul class="source-list">
+        <li><a href="https://github.com/XPixelGroup/BasicSR">BasicSR: Open Source Image and Video Restoration Toolbox</a></li>
+        <li><a href="https://github.com/huggingface/accelerate">HuggingFace Accelerate</a></li>
+        <li><a href="https://github.com/xinntao/Real-ESRGAN">Real-ESRGAN (Training time references)</a></li>
+        <li><a href="https://github.com/xinntao/Real-ESRGAN/issues/38">Real-ESRGAN Training Time Discussion (Issue #38)</a></li>
+    </ul>
+
+    <h3>Cloud GPU Pricing</h3>
+    <ul class="source-list">
+        <li><a href="https://lambda.ai/pricing">Lambda Labs Pricing</a></li>
+        <li><a href="https://www.runpod.io/pricing">RunPod Pricing</a></li>
+        <li><a href="https://vast.ai/pricing">Vast.ai Pricing</a></li>
+        <li><a href="https://colab.research.google.com/signup">Google Colab Pricing</a></li>
+        <li><a href="https://intuitionlabs.ai/articles/h100-rental-prices-cloud-comparison">H100 Rental Prices Comparison (IntuitionLabs, 2026)</a></li>
+        <li><a href="https://docs.jarvislabs.ai/blog/a100-price">A100 Price Guide 2026 (JarvisLabs)</a></li>
+    </ul>
+
+    <h3>GPU Specifications & Benchmarks</h3>
+    <ul class="source-list">
+        <li><a href="https://en.wikipedia.org/wiki/GeForce_RTX_40_series">GeForce RTX 40 Series Specifications (Wikipedia)</a></li>
+        <li><a href="https://www.notebookcheck.net/NVIDIA-GeForce-RTX-4060-GPU-Benchmarks-and-Specs.741899.0.html">RTX 4060 Benchmarks (NotebookCheck)</a></li>
+        <li><a href="https://docs.nvidia.com/deeplearning/performance/mixed-precision-training/index.html">NVIDIA Mixed Precision Training Guide</a></li>
+        <li><a href="https://residentmario.github.io/pytorch-training-performance-guide/gradient-checkpoints.html">PyTorch Gradient Checkpointing Guide</a></li>
+    </ul>
+
+    <h3>Community Resources</h3>
+    <ul class="source-list">
+        <li><a href="https://dev.to/fredwessberg/training-esrgan-seemingly-impossible-67k">Training ESRGAN: Real-world Experience (DEV Community)</a></li>
+        <li><a href="https://upscale.wiki/wiki/Benchmarks">Upscale Wiki Benchmarks</a></li>
+        <li><a href="https://openaccess.thecvf.com/content/CVPR2024W/NTIRE/papers/Ren_The_Ninth_NTIRE_2024_Efficient_Super-Resolution_Challenge_Report_CVPRW_2024_paper.pdf">NTIRE 2024 Efficient SR Challenge Report</a></li>
+        <li><a href="https://arxiv.org/html/2504.10686v1">NTIRE 2025 Efficient SR Challenge Report</a></li>
+    </ul>
+
+</div>
+
+</body>
+</html>

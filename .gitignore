@@ -32,6 +32,7 @@ zbuffer_dumps/
 test_outputs/
 benchmark_outputs/
 examples/
+training_data/
 test.jpg
 test_resized.png
 

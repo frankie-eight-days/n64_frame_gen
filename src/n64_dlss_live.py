@@ -5,6 +5,7 @@ Usage:  python n64_dlss_live.py
 
 Controls:
     F2          Toggle diffusion on/off
+    F3          Toggle training data capture
     ESC         Quit
     Arrow Keys  D-Pad
     WASD        Analog Stick
@@ -106,6 +107,30 @@ def extract_canny(frame: np.ndarray, low: int = 100, high: int = 200) -> np.ndar
 
 SM64_ZBUFFER_ADDR = 0x00000400
 SM64_ZBUFFER_SIZE = 320 * 240 * 2  # 153,600 bytes
+
+
+def compute_normals_from_depth(z14):
+    """Compute screen-space normals from a depth buffer via cross-product of gradients.
+
+    Args:
+        z14: (H, W) float32 depth array (higher = farther)
+
+    Returns:
+        (H, W, 3) float32 normal map with values in [-1, 1], RGB = XYZ
+    """
+    # Compute gradients (central differences, padded to preserve size)
+    dzdx = np.zeros_like(z14)
+    dzdy = np.zeros_like(z14)
+    dzdx[:, 1:-1] = z14[:, 2:] - z14[:, :-2]
+    dzdy[1:-1, :] = z14[2:, :] - z14[:-2, :]
+    # Normal = normalize(cross(tangent_x, tangent_y))
+    # tangent_x = (2, 0, dzdx), tangent_y = (0, 2, dzdy)
+    # cross = (-2*dzdx, -2*dzdy, 4)
+    normals = np.stack([-dzdx, -dzdy, np.ones_like(dzdx) * 2.0], axis=-1)
+    norms = np.linalg.norm(normals, axis=-1, keepdims=True)
+    norms = np.maximum(norms, 1e-8)
+    normals = normals / norms
+    return normals
 
 
 def _decode_n64_z(rdram_array, address, width, height):
@@ -283,6 +308,13 @@ class DiffusionProcessor:
         self.show_flow_debug = False
         self.latest_flow_debug = None
         self.motion_source = "optical_flow"  # "optical_flow" or "game_state"
+
+        # Training data capture
+        self.capture_enabled = False
+        self.capture_every_n = 5       # save every Nth frame (skip near-duplicates)
+        self._capture_count = 0
+        self._capture_saved = 0
+        self._capture_dir = os.path.join(SCRIPT_DIR, "training_data")
 
     def set_rdram(self, rdram_array):
         self._rdram = rdram_array
@@ -740,6 +772,40 @@ def create_control_panel(processor):
     ttk.Label(f_stat, textvariable=emu_fps_var).pack(anchor="w")
     ttk.Label(f_stat, textvariable=status_var).pack(anchor="w")
 
+    # -- Training Data Capture --
+    f_cap = ttk.LabelFrame(left_col, text="Training Data Capture", padding=8)
+    f_cap.pack(fill="x", pady=4)
+
+    capture_var = tk.BooleanVar(value=False)
+    capture_count_var = tk.StringVar(value="Captured: 0 frames")
+
+    def on_capture_toggle():
+        processor.capture_enabled = capture_var.get()
+        if processor.capture_enabled:
+            os.makedirs(processor._capture_dir, exist_ok=True)
+            print(f"Capture ON → {processor._capture_dir}")
+
+    w = ttk.Checkbutton(f_cap, text="Record Frames  [F3]",
+                        variable=capture_var, command=on_capture_toggle)
+    w.pack(anchor="w")
+    ToolTip(w, "Record RGB + depth + normals to training_data/ folder.\nSaves every 5th frame to avoid duplicates.")
+
+    ttk.Label(f_cap, textvariable=capture_count_var).pack(anchor="w")
+
+    skip_var = tk.IntVar(value=5)
+    skip_label = ttk.Label(f_cap, text="Save every 5th frame")
+    skip_label.pack(anchor="w")
+
+    def on_skip_change(val):
+        v = max(1, int(float(val)))
+        processor.capture_every_n = v
+        skip_label.config(text=f"Save every {v}{'st' if v == 1 else 'th'} frame")
+
+    w = ttk.Scale(f_cap, from_=1, to=30, variable=skip_var,
+                  orient="horizontal", command=on_skip_change)
+    w.pack(fill="x")
+    ToolTip(w, "How many frames to skip between captures.\nHigher = less redundancy, fewer frames.")
+
     # ==========================================================
     # RIGHT COLUMN
     # ==========================================================
@@ -1124,7 +1190,7 @@ def main():
     emu_t0 = time.time()
     emu_fps = 0.0
 
-    print("\nRunning! F2 = Toggle diffusion | ESC = Quit")
+    print("\nRunning! F2 = Toggle diffusion | F3 = Toggle capture | ESC = Quit")
 
     while running:
         # -- tkinter pump --
@@ -1138,6 +1204,7 @@ def main():
         root._v["status"].set(processor.status)
         root._v["diff_fps"].set(f"Diffusion: {processor.diff_fps:.1f} FPS")
         root._v["emu_fps"].set(f"Emulator: {emu_fps:.1f} FPS")
+        capture_count_var.set(f"Captured: {processor._capture_saved} frames")
 
         # -- Pygame events --
         for event in pygame.event.get():
@@ -1148,6 +1215,14 @@ def main():
                     running = False
                 elif event.key == pygame.K_F1:
                     frontend.core.retro_reset()
+                elif event.key == pygame.K_F3:
+                    processor.capture_enabled = not processor.capture_enabled
+                    capture_var.set(processor.capture_enabled)
+                    if processor.capture_enabled:
+                        os.makedirs(processor._capture_dir, exist_ok=True)
+                        print(f"Capture ON → {processor._capture_dir}")
+                    else:
+                        print(f"Capture OFF — {processor._capture_saved} frames saved")
                 elif event.key == pygame.K_F2:
                     processor.enabled = not processor.enabled
                     root._v["enabled"].set(processor.enabled)
@@ -1176,6 +1251,31 @@ def main():
                 raw_canvas.configure(image=raw_win._photo)
             except tk.TclError:
                 pass  # window closed
+
+        # -- Training data capture --
+        if (processor.capture_enabled and
+                processor.latest_raw_frame is not None and
+                processor._rdram is not None):
+            processor._capture_count += 1
+            if processor._capture_count % processor.capture_every_n == 0:
+                try:
+                    cap_dir = processor._capture_dir
+                    os.makedirs(cap_dir, exist_ok=True)
+                    idx = processor._capture_saved
+                    # RGB frame
+                    Image.fromarray(processor.latest_raw_frame).save(
+                        os.path.join(cap_dir, f"{idx:06d}_rgb.png"))
+                    # Depth (z14 float32)
+                    z14, _ = _decode_n64_z(processor._rdram, SM64_ZBUFFER_ADDR, 320, 240)
+                    # Normals from depth
+                    normals = compute_normals_from_depth(z14)
+                    # Save depth + normals as compressed npz
+                    np.savez_compressed(
+                        os.path.join(cap_dir, f"{idx:06d}_gbuf.npz"),
+                        depth=z14, normals=normals)
+                    processor._capture_saved += 1
+                except Exception as e:
+                    print(f"Capture error: {e}")
 
         # -- Swap in enhanced frame if diffusion is on --
         if processor.enabled and processor.latest_enhanced_frame is not None:

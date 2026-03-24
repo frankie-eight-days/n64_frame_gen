@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(start \"\" \"C:\\\\Users\\\\frank\\\\OneDrive\\\\Documents\\\\vibecoding\\\\n64_dlss\\\\docs\\\\style_transfer_training_report.html\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\(''src/n64_dlss_live.py''\\).read\\(\\)\\); print\\(''OK''\\)\")"
+    ]
+  }
+}
